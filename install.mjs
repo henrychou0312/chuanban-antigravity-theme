@@ -35,7 +35,8 @@ process.emitWarning = function (warning, ...rest) {
 
 const GOOGLE_DRIVE_URL = 'https://drive.google.com/drive/folders/1NX92SgVUqtSjWg6bt6sIJXy-cn7J_boC';
 const NOTION_GUIDE_URL = 'https://chuanban.notion.site/chuanban-antigravity-theme-patch-db7c5846f37546be9481cd791aed0554';
-const GITHUB_REPO_URL = 'https://github.com/Anarcadia/chuanban-antigravity-theme-patch';
+const GITHUB_REPO_URL = 'https://github.com/henrychou0312/chuanban-antigravity-theme';
+const UPSTREAM_REPO_URL = 'https://github.com/Anarcadia/chuanban-antigravity-theme-patch';
 
 const ALLOWED_ORIGINS = [
   'http://127.0.0.1',
@@ -114,12 +115,14 @@ function buildManifest(baseDir = __dirname) {
   const manifest = {
     name: 'chuanban-antigravity-theme-patch',
     version: '5.5.0',
+    platform: 'darwin',
     minNodeVersion: '22.0.0',
     fullMetricsNodeVersion: '22.13.0',
     distribution: {
       notionGuide: NOTION_GUIDE_URL,
       googleDriveFullBundle: GOOGLE_DRIVE_URL,
-      githubRepo: GITHUB_REPO_URL
+      githubRepo: GITHUB_REPO_URL,
+      upstreamRepo: UPSTREAM_REPO_URL
     },
     files: entries
   };

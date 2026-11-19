@@ -1,1 +1,5 @@
 dist/
+logs/
+backups/
+core.prev/
+.DS_Store

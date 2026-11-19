@@ -24,8 +24,8 @@ description: 船板的 Antigravity 2.0 macOS 专属主题、字体与汉化补�
 1. **Google Drive 资源包（含必备字体）**：<https://drive.google.com/drive/folders/1NX92SgVUqtSjWg6bt6sIJXy-cn7J_boC>
    - 必备 4 个字体文件：`AnthropicSerif-Regular.ttf`、`AnthropicSerif-Bold.ttf`、`AnthropicMono-Regular.ttf`、`Sarasa-SuperTTC.ttc`（`v5.5.0` UI 西文直连官方 `Google Sans Flex`，**不再依赖 `AnthropicSans-*.ttf`**）。
    - *限流备选*：若 `Sarasa-SuperTTC.ttc`（~791 MB）触发 Google Drive 24h 下载限额，可直接运行 `brew install --cask font-sarasa-gothic`。
-2. **GitHub 代码仓库**：<https://github.com/Anarcadia/chuanban-antigravity-theme-patch>
-3. **Notion 引导页**：<https://chuanban.notion.site/chuanban-antigravity-theme-patch-db7c5846f37546be9481cd791aed0554>
+2. **GitHub 代码仓库**：<https://github.com/henrychou0312/chuanban-antigravity-theme>（基于上游 <https://github.com/Anarcadia/chuanban-antigravity-theme-patch> 精简为 macOS 专属并完成运行时安全加固）
+3. **Notion 引导页（上游参考）**：<https://chuanban.notion.site/chuanban-antigravity-theme-patch-db7c5846f37546be9481cd791aed0554>
 
 ### 实机样式基准参考
 - **标准浅色主界面视图（高对比书卷暖白工作台 + 衬线正文 + 暗红蜡封输入框）**：[`assets/preview-light-workbench.png`](assets/preview-light-workbench.png)
@@ -51,13 +51,13 @@ description: 船板的 Antigravity 2.0 macOS 专属主题、字体与汉化补�
 运行态默认安装路径：`~/.gemini/antigravity/theme-patch/`：
 
 ```text
-chuanban-antigravity-theme-patch/
-├── install.mjs                 # macOS 生命周期 CLI（install / relaunch / install-fonts / doctor / verify / rollback / uninstall / pack）
+chuanban-antigravity-theme/
+├── install.mjs                 # macOS 生命周期 CLI（install / relaunch / install-fonts / doctor / verify / rollback / uninstall / build-manifest / pack）
 ├── SKILL.md                    # 面向 AI Agent 的部署与二次改装契约（本文件）
 ├── README.md                   # 面向用户的项目说明与快速上手指南
 ├── CHANGELOG.md                # 版本演进记录
 ├── core/                       # 【只读内核】随版本升级原子替换，Agent 严禁直接修改
-│   ├── manifest.json           # 版本号（5.5.0）、资源地址与 core/* 四件套 SHA-256 校验清单
+│   ├── manifest.json           # 版本号（5.5.0）、平台声明（darwin）、资源地址与 core/* 四件套 SHA-256 校验清单
 │   ├── daemon.mjs              # macOS Node CDP 守护进程（运行时 core/manifest.json SHA-256 强校验、宿主独占指纹门禁、2.33.0+ M2 冷启动自动接力重启、单实例 PID 协作围栏、SQLite O(1) 增量与子 Agent `+N sub` 聚合、Swarm 子帧注入、2.5s 热重载感知）
 │   ├── runtime.js              # 浏览器端注入引擎（宿主指纹门禁与 0ms 防闪白、昼夜双预设 `preset`/`darkPreset` 与 curtainView 联动、Google Sans Flex 防脱靶保底 `#ag-google-sans-flex-fonts`、冷启动兜底包自愈、弯引号与 DICT_CI 索引）
 │   ├── theme.css               # 四段式样式表（Part I Google Sans Flex × AgSarasaUI 字重桥接、Anthropic Serif 正文与 macOS 浅色全域活字润墨平衡 / Part II 白天暖纸三预设 / Part III 独立黑夜双预设 / Part IV 指标胶囊）
@@ -101,10 +101,10 @@ node install.mjs install --sync-user
 ```
 **关键行为与边缘判读（必读）**：
 1. **单图标纯净模式（无多余 `.app` 图标）**：
-   - 默认不创建第二个 `.app` 图标：`doctor` / `install` 返回 `"launcherMode": "single-icon-m2-relay"` 且 `"launcherInstalled": false` **属于正常预期设计，切勿误判为安装失败**（仅显式传 `--with-launcher` 时才生成可选 `Antigravity (Theme).app` 启动器）。
+   - 默认不创建第二个 `.app` 图标：`doctor` 返回 `antigravity.launcherMode: "single-icon-m2-relay"` 且 `antigravity.launcherInstalled: false`，`install` 返回 `launcherStatus.mode: "single-icon-m2-relay"` 且 `launcherStatus.launchers: []`，**均属于正常预期设计，切勿误判为安装失败**（仅显式传 `--with-launcher` 时才生成可选 `Antigravity (Theme).app` 启动器）。
 2. **Antigravity `2.33.0+` 调试端口接力与防 Agent 自断会话**：
    - Antigravity `2.33.0+` 默认不生成 `DevToolsActivePort`，需携带 `--remote-debugging-port=0` 启动。后台守护进程内置 **M2 冷启动接力**：当用户日常点击原版图标或客户端更新重启时，守护进程会在冷启动前 `12s`（更新重启 `25s`）内自动无感补参重拉，且**对运行已超时间窗的存量会话 100% 豁免绝不强杀**。
-   - **若 `install` 或 `doctor` 返回 `"cdpStatus": "missing_opt_in_flag"`**：
+   - **若 `install` 返回顶层 `"cdpStatus": "missing_opt_in_flag"`（或 `doctor` 返回 `antigravity.cdpStatus: "missing_opt_in_flag"`）**：
      - **场景 A（当前 Agent 正运行在 Antigravity 内部对话中）**：**严禁加 `--force` 同步调用 `relaunch` 自杀中断当前回复！**（不带 `--force` 调用也会被 15 秒 `.db-wal` 活跃会话门禁以退出码 `2` 安全拦截）。请直接告知用户补丁与后台守护已部署就绪，等本轮对话结束后**手动退出重开一次 Antigravity**（`M2` 将自动接力），或在外部终端执行：
        `node ~/.gemini/antigravity/theme-patch/install.mjs relaunch`
      - **场景 B（当前 Agent 运行在外部独立终端，如 Claude Code / Codex / iTerm2 / Terminal.app，且 Antigravity 无正在输出的对话）**：可直接运行 `node install.mjs relaunch` 自动完成平滑重启与重注。
@@ -113,7 +113,7 @@ node install.mjs install --sync-user
 ```bash
 node install.mjs verify
 ```
-当输出 `"ok": true`、`"bodyReady": true`、`"hasStyle": true`、`"dictCount": 1860` 时，代表主题、字体、汉化与指标胶囊已全部实机生效。
+当顶层输出 `"ok": true`、`"themeStyle": true`，且 `live.state` 下 `"bodyReady": true`、`"hasStyle": true`、`"dictCount": 1860` 时，代表主题、字体、汉化与指标胶囊已全部实机生效。
 
 ---
 
