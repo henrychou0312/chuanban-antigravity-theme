@@ -1,8 +1,39 @@
 # Changelog
 
-本项目的所有重要版本演进、客户端漂移适配、汉化扩充与跨平台架构加固均记录于此文件。
+本项目的所有重要版本演进、客户端漂移适配、汉化扩充、macOS 专属精简与安全加固均记录于此文件。
 
 ---
+
+## [v5.5.0-macos-hardened] - 2026-11-19
+
+> **适用平台**：仅限 **macOS（`darwin`）**（Antigravity `2.33.0+`，向下完全兼容 `2.32.x` / `2.31.x` / `2.30.0`）  
+> **变更定位**：基于上游 `v5.5.0` 基线精简为 **macOS 专属版本**，落地 **运行时安全加固（Risk 2）**，并全面对齐当前仓库配置、清单元数据与安装说明
+
+### Removed & Changed（macOS 专属精简）
+- **移除全部非 macOS 平台分支与冗余逻辑（`install.mjs` / `core/daemon.mjs` / `core/runtime.js` / `core/theme.css`）**：
+  - 删除 Windows（`.lnk` 快捷方式修补、PowerShell / `tasklist` / `wmic`、WSL2 SQLite 双轨、DirectWrite 字体轴补丁、计划任务自启）与 Linux（`.desktop`、`systemd`、`fc-list` 等）代码路径；
+  - 在 `install.mjs` 与 `core/daemon.mjs` 入口显式增加 `process.platform !== 'darwin'` 守卫，非 macOS 平台直接报错退出；
+  - 精简字体检测与服务注册路径，仅保留 macOS `~/Library/Fonts`、LaunchAgent（`launchctl`）与单图标 `M2` 冷启动接力架构。
+
+### Security（运行时完整性校验、移除任意代码注入与最小权限收敛）
+- **移除动态代码注入与外部脚本自动拉起（`core/daemon.mjs` / `core/runtime.js` / `core/theme.css` / `install.mjs` / `user/`）**：
+  - 删除 `user/custom.js`、`modules.customJs`、浏览器端 `new Function(...)` 执行通道与 `window.__AG_PATCH_CTX__` 暴露面；`user/` 层收窄为纯声明式配置（`config.json`）、纯 CSS（`custom.css`）与词典覆盖（`i18n.override.json`）；
+  - 移除守护进程对外部 `~/.gemini/antigravity/scripts/antigravity-zh-title-patch.py` 的自动检测与 `python3` 执行调用，以及对应悬浮告警卡（`.ag-tt-warn` / `.ag-tt-copy-btn`）UI 与样式逻辑。
+- **守护进程运行时 `core/manifest.json` SHA-256 强校验（Fail-Closed）（`core/daemon.mjs`）**：
+  - 启动阶段与每次核心文件热重载前，基于单次读取的 Buffer 同步校验 `core/manifest.json` 中 4 个核心文件（`daemon.mjs`、`runtime.js`、`theme.css`、`i18n.json`）的 SHA-256 与字节长度，消除 TOCTOU 窗口；缺失或校验失败时启动即非零退出、运行期拒绝注入。
+- **权限收敛与无常驻安装模式（`install.mjs` / `core/daemon.mjs`）**：
+  - 将安装目录 `~/.gemini/antigravity/theme-patch/`、核心脚本、配置文件、LaunchAgent `.plist`、包装脚本及锁文件统一收紧为属主独占权限（目录与可执行脚本 `0700`，数据/配置/日志 `0600`）；
+  - 将 LaunchAgent 标准输出/错误日志从公共 `/tmp` 迁移至私有目录 `~/.gemini/antigravity/theme-patch/logs/daemon.{log,err}`（保留原位体积自截断保护）；
+  - 新增 `node install.mjs install --no-service` 无常驻后台安装选项（跳过 LaunchAgent 注册并清理已有后台常驻服务，支持按需手动运行 `daemon.mjs` 或 `daemon.mjs --once`）。
+
+### Docs & Config（仓库配置与安装说明对齐）
+- 更新 `install.mjs` 与 `core/manifest.json` 的仓库元数据：`distribution.githubRepo` 对齐为 `https://github.com/henrychou0312/chuanban-antigravity-theme`，新增 `platform: "darwin"` 与 `distribution.upstreamRepo` 追溯上游来源；
+- 对齐 `README.md` 与 `SKILL.md` 中的徽章、仓库链接、AI Agent 一键安装/升级克隆地址、`doctor` / `install` / `verify` 输出字段说明，并在 `README.md` 补充 macOS 手动终端安装步骤；
+- 在 `.gitignore` 补充忽略本地运行与备份产物（`logs/`、`backups/`、`core.prev/`、`.DS_Store`）。
+
+---
+
+> **上游历史基线说明**：以下 `v5.5.0` 及更早版本记录保留自上游 [`Anarcadia/chuanban-antigravity-theme-patch`](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) 作为功能演进参考（其中涉及的 Windows / Linux 适配、`user/custom.js` 与 `antigravity-zh-title-patch.py` 等能力已于上方 `v5.5.0-macos-hardened` 精简或移除）。
 
 ## [v5.5.0] - 2026-11-19
 
