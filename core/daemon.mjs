@@ -1,17 +1,18 @@
 #!/usr/bin/env node
 /**
- * chuanban-antigravity-theme-patch · CDP Theme & Live Metrics Daemon (core/daemon.mjs)
+ * chuanban-antigravity-theme-patch · macOS CDP Theme & Live Metrics Daemon (core/daemon.mjs)
  *
- * 架构特性（v5.5.0）：
+ * 架构特性（v5.5.0 · macOS 专属）：
  * 1. 动态 Node 分级：
  *    - Node >= 22.0：完整启用昼夜双模式独立主题（暖纸浅色三预设 + 深色 onyx / claude-warm 双预设）、Google Sans Flex 原生西文引擎 × 更纱黑体 UI 精密字重桥接 + Anthropic Serif 正文、输入框三态、1860条母语级汉化、宿主独占指纹门禁、死锁与冷启动兜底包自愈及 2.33.0+ CDP Opt-in 自动接力（M2）。
- *    - Node >= 22.13：动态 `await import('node:sqlite')` 解锁底部实时会话指标胶囊（O(1) 增量尾行解析 + WSL2 双轨只读读取）；低版本优雅降级绝不崩溃。
+ *    - Node >= 22.13：动态 `await import('node:sqlite')` 解锁底部实时会话指标胶囊（O(1) 增量尾行解析）；低版本优雅降级绝不崩溃。
  * 2. 模块化与热重载：
- *    - 周期性检测 `user/config.json`、`user/custom.css`、`user/i18n.override.json`、`user/custom.js` 的 mtime，
+ *    - 周期性检测 `user/config.json`、`user/custom.css`、`user/i18n.override.json` 的 mtime，
  *      用户或对方 Agent 修改 `user/` 层后 2.5 秒内自动重新构建签名并热更新至所有打开的 Antigravity 窗口。
  * 3. 双通道同进程共生：
  *    - 默认 `channel: "auto"` 同时探测 Stable 与 Insiders 调试端口（亦可通过 `--channel stable|insiders` 锁定单通道）。
- * 4. 安全模式隔离：
+ * 4. 安全模式与运行时完整性门禁：
+ *    - 启动及每次核心文件重载前强制校验 `core/manifest.json` 的 SHA-256 与字节长度（篡改即拒载）；
  *    - 支持 `--safe-mode` 启动参数，一键绕过 `user/` 改装层，仅加载 `core/` 黄金内核用于故障定界。
  */
 
@@ -20,8 +21,13 @@ import path from 'node:path';
 import os from 'node:os';
 import http from 'node:http';
 import crypto from 'node:crypto';
-import { execFile, spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+
+if (process.platform !== 'darwin') {
+  console.error(`[ERROR] chuanban-antigravity-theme daemon only supports macOS (darwin). Current platform: ${process.platform}`);
+  process.exit(1);
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -43,7 +49,7 @@ try {
 }
 
 // ============================================================================
-// 1. CLI 参数解析（同时兼容 --flag value 与 --flag=value）与跨平台路径探测
+// 1. CLI 参数解析（同时兼容 --flag value 与 --flag=value）与 macOS 路径探测
 // ============================================================================
 const args = process.argv.slice(2);
 const hasFlag = (f) => args.some((a) => a === f || a.startsWith(f + '='));
@@ -88,137 +94,80 @@ function getFileMtimeSig(filePath) {
   }
 }
 
-const wslDirsCache = new Map(); // cacheKey -> { sig, distro, dirs, probedAt }
-let cachedRegWslDistros = { distros: [], probedAt: 0 };
-let wslUncBackoffUntil = 0;
+const REQUIRED_CORE_FILES = ['daemon.mjs', 'runtime.js', 'theme.css', 'i18n.json'];
 
-function resolveWslDistrosFromRegistry() {
-  if (process.platform !== 'win32') return [];
-  const now = Date.now();
-  if (now - cachedRegWslDistros.probedAt < 60000) {
-    return cachedRegWslDistros.distros;
-  }
-  const distros = [];
+function writePrivateFileSync(filePath, data, encoding = 'utf8', mode = 0o600) {
+  fs.writeFileSync(filePath, data, typeof data === 'string' ? { encoding, mode } : { mode });
   try {
-    // 仅读取 Windows 注册表 Lxss 项获取默认及已注册 WSL 发行版名，0 虚拟机唤醒开销（不调用 wsl.exe）
-    const res = spawnSync('reg', ['query', 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Lxss', '/s'], {
-      windowsHide: true,
-      encoding: 'utf8',
-      timeout: 1500
-    });
-    if (res.status === 0 && res.stdout) {
-      const out = String(res.stdout);
-      const defMatch = out.match(/^\s*DefaultDistribution\s+REG_SZ\s+(\{[^\r\n]+\})/im);
-      const defaultGuid = defMatch ? defMatch[1].trim().toLowerCase() : '';
-      const byGuid = new Map();
-      const blocks = out.split(/\r?\n(?=\s*HKEY_CURRENT_USER\\)/i);
-      for (const blk of blocks) {
-        const hdrMatch = blk.match(/\\Lxss\\(\{[^\\\r\n]+\})\s*$/im);
-        if (!hdrMatch) continue;
-        const guid = hdrMatch[1].trim().toLowerCase();
-        const nameMatch = blk.match(/^\s*DistributionName\s+REG_SZ\s+([^\r\n]+)/im);
-        if (!nameMatch) continue;
-        const name = nameMatch[1].trim();
-        if (!name || /^docker-desktop/i.test(name) || !/^[A-Za-z0-9._-]+$/.test(name)) continue;
-        byGuid.set(guid, name);
-      }
-      if (defaultGuid && byGuid.has(defaultGuid)) {
-        // wsl_state.json {"distro":""} 特指连接默认发行版；仅返回默认发行版，杜绝触碰其它已停止发行版触发 P9 冷启动唤醒
-        distros.push(byGuid.get(defaultGuid));
-      } else {
-        for (const [, name] of byGuid.entries()) {
-          if (!distros.includes(name)) {
-            distros.push(name);
-          }
-        }
-      }
-    }
+    fs.chmodSync(filePath, mode);
   } catch {}
-  cachedRegWslDistros = { distros, probedAt: now };
-  return distros;
 }
 
-function resolveWin32WslConversationsDirs(portFile, geminiSubDir) {
-  if (process.platform !== 'win32' || !portFile || !geminiSubDir) return [];
-  const now = Date.now();
-  if (now < wslUncBackoffUntil) return [];
-  try {
-    const wslStatePath = path.join(path.dirname(portFile), 'wsl_state.json');
-    const fileSig = getFileMtimeSig(wslStatePath);
-    const envDistro = String(process.env.ANTIGRAVITY_WSL_DISTRO || '').trim();
-    const compositeSig = `${fileSig}|env:${envDistro}`;
-    if (fileSig === '0:0' && !envDistro) {
-      wslDirsCache.delete(wslStatePath);
-      return [];
-    }
-    const cached = wslDirsCache.get(wslStatePath);
-    if (
-      cached &&
-      cached.sig === compositeSig &&
-      ((cached.dirs.length > 0 && now - cached.probedAt < 60000) || now - cached.probedAt < 15000)
-    ) {
-      return cached.dirs;
-    }
-
-    const wslState = fileSig !== '0:0' ? readJsonSafe(wslStatePath, {}) : {};
-    const persistedDistro = String(wslState?.distro || wslState?.distroName || wslState?.defaultDistro || '').trim();
-    const rawDistro = persistedDistro || envDistro;
-    let candidateDistros = [];
-    if (rawDistro) {
-      if (/^[A-Za-z0-9._-]+$/.test(rawDistro)) {
-        candidateDistros = [rawDistro];
-      }
-    } else if (fileSig !== '0:0') {
-      // 默认 WSL 发行版下 Antigravity 写入 {"distro":""}，从 HKCU\...\Lxss 注册表兜底解析默认发行版
-      candidateDistros = resolveWslDistrosFromRegistry();
-    }
-    if (candidateDistros.length === 0) {
-      wslDirsCache.set(wslStatePath, { sig: compositeSig, distro: '', dirs: [], probedAt: now });
-      return [];
-    }
-
-    const t0 = Date.now();
-    const subParts = geminiSubDir.split('/');
-    const found = [];
-    outer: for (const distro of candidateDistros) {
-      for (const uncHost of ['wsl.localhost', 'wsl$']) {
-        const distroRoot = `\\\\${uncHost}\\${distro}`;
-        if (!fs.existsSync(distroRoot)) {
-          if (Date.now() - t0 > 400) break outer;
-          continue;
-        }
-        const homeRoot = path.join(distroRoot, 'home');
-        if (fs.existsSync(homeRoot)) {
-          try {
-            for (const userEntry of fs.readdirSync(homeRoot)) {
-              const convDir = path.join(homeRoot, userEntry, ...subParts, 'conversations');
-              if (fs.existsSync(convDir)) found.push(convDir);
-            }
-          } catch {}
-        }
-        const rootConvDir = path.join(distroRoot, 'root', ...subParts, 'conversations');
-        if (fs.existsSync(rootConvDir)) found.push(rootConvDir);
-        if (Date.now() - t0 > 400) break outer;
-        // 首个发行版命中会话目录后立即终止内外层探测，杜绝继续访问其它已停止发行版触发虚拟机唤醒
-        if (found.length > 0) break outer;
-      }
-      if (Date.now() - t0 > 400) break;
-    }
-    if (Date.now() - t0 > 400) {
-      wslUncBackoffUntil = Date.now() + 45000;
-    }
-    const uniqueDirs = Array.from(new Set(found));
-    wslDirsCache.set(wslStatePath, {
-      sig: compositeSig,
-      distro: candidateDistros.join(','),
-      dirs: uniqueDirs,
-      probedAt: Date.now()
-    });
-    return uniqueDirs;
-  } catch {
-    wslUncBackoffUntil = Date.now() + 45000;
-    return [];
+function verifyCoreManifestIntegrity(coreDir = CORE_DIR) {
+  const manifestPath = path.join(coreDir, 'manifest.json');
+  if (!fs.existsSync(manifestPath)) {
+    return { ok: false, reason: 'missing core/manifest.json', mismatches: [] };
   }
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8').replace(/^\uFEFF/, ''));
+  } catch (err) {
+    return { ok: false, reason: `invalid core/manifest.json: ${err?.message || err}`, mismatches: [] };
+  }
+  const filesMap =
+    manifest && typeof manifest.files === 'object' && !Array.isArray(manifest.files) ? manifest.files : null;
+  if (!filesMap) {
+    return { ok: false, reason: 'core/manifest.json missing files map', mismatches: [] };
+  }
+  const allNames = Array.from(new Set([...REQUIRED_CORE_FILES, ...Object.keys(filesMap)]));
+  const mismatches = [];
+  const verifiedFiles = {};
+  for (const name of allNames) {
+    if (name.includes('/') || name.includes('\\') || name.includes('..')) {
+      mismatches.push({ file: name, status: 'invalid_name' });
+      continue;
+    }
+    const meta = filesMap[name];
+    if (
+      !meta ||
+      typeof meta.sha256 !== 'string' ||
+      !/^[0-9a-f]{64}$/i.test(meta.sha256) ||
+      !Number.isInteger(meta.bytes) ||
+      meta.bytes < 0
+    ) {
+      mismatches.push({ file: name, status: 'invalid_manifest_entry' });
+      continue;
+    }
+    const filePath = path.join(coreDir, name);
+    let buf;
+    try {
+      buf = fs.readFileSync(filePath);
+    } catch {
+      mismatches.push({ file: name, status: 'missing' });
+      continue;
+    }
+    const actualSha = crypto.createHash('sha256').update(buf).digest('hex');
+    if (actualSha !== meta.sha256.toLowerCase() || buf.length !== meta.bytes) {
+      mismatches.push({
+        file: name,
+        status: 'modified',
+        expected: meta.sha256,
+        actual: actualSha,
+        expectedBytes: meta.bytes,
+        actualBytes: buf.length
+      });
+      continue;
+    }
+    verifiedFiles[name] = buf.toString('utf8');
+  }
+  if (mismatches.length > 0) {
+    return {
+      ok: false,
+      reason: mismatches.map((m) => `${m.file}:${m.status}`).join(', '),
+      mismatches
+    };
+  }
+  return { ok: true, manifest, files: verifiedFiles };
 }
 
 function resolveChannelPaths(singleChannel = 'stable', userCfg = {}) {
@@ -227,17 +176,7 @@ function resolveChannelPaths(singleChannel = 'stable', userCfg = {}) {
   const appDirName = isInsiders ? 'Antigravity - Insiders' : 'Antigravity';
   const geminiSubDir = isInsiders ? '.gemini/antigravity-insiders' : '.gemini/antigravity';
 
-  let defaultPortFile;
-  if (process.platform === 'darwin') {
-    defaultPortFile = path.join(home, 'Library', 'Application Support', appDirName, 'DevToolsActivePort');
-  } else if (process.platform === 'win32') {
-    const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
-    defaultPortFile = path.join(appData, appDirName, 'DevToolsActivePort');
-  } else {
-    const xdgConfig = process.env.XDG_CONFIG_HOME || path.join(home, '.config');
-    defaultPortFile = path.join(xdgConfig, appDirName, 'DevToolsActivePort');
-  }
-
+  const defaultPortFile = path.join(home, 'Library', 'Application Support', appDirName, 'DevToolsActivePort');
   const defaultConvDir = path.join(home, geminiSubDir, 'conversations');
   const dotDir = path.join(home, isInsiders ? '.antigravity-insiders' : '.antigravity');
   const argvPath = path.join(dotDir, 'argv.json');
@@ -255,14 +194,11 @@ function resolveChannelPaths(singleChannel = 'stable', userCfg = {}) {
   const portFile = getArg('--port-file', userCfg.portFile || defaultPortFile);
   const channelInstalled =
     fs.existsSync(portFile) || fs.existsSync(path.dirname(defaultPortFile)) || fs.existsSync(dotDir);
-  const explicitConvDir = getArg('--conversations-dir', userCfg.conversationsDir || '');
-  const primaryConvDir = explicitConvDir || defaultConvDir;
+  const primaryConvDir = getArg('--conversations-dir', userCfg.conversationsDir || '') || defaultConvDir;
 
   return {
     channel: singleChannel,
     portFile,
-    geminiSubDir,
-    explicitConvDir: Boolean(explicitConvDir),
     fallbackPort: Number(userCfg.fallbackPort) > 0 ? Number(userCfg.fallbackPort) : fallbackPort,
     channelInstalled,
     conversationsDir: primaryConvDir
@@ -333,8 +269,7 @@ let activeConfig = {
     coldBootHealer: true,
     zoomShortcuts: true,
     cdpAutoRelaunch: true,
-    customCss: true,
-    customJs: true
+    customCss: true
   },
   themeVars: {},
   darkThemeVars: {},
@@ -372,7 +307,10 @@ function persistDarkPresetToUserConfig(rawDarkPreset) {
   const cfgPath = path.join(USER_DIR, 'config.json');
   const tmpPath = `${cfgPath}.tmp-${process.pid}`;
   try {
-    fs.mkdirSync(USER_DIR, { recursive: true });
+    fs.mkdirSync(USER_DIR, { recursive: true, mode: 0o700 });
+    try {
+      fs.chmodSync(USER_DIR, 0o700);
+    } catch {}
     let currentObj = {};
     if (fs.existsSync(cfgPath)) {
       let parsed = null;
@@ -411,7 +349,7 @@ function persistDarkPresetToUserConfig(rawDarkPreset) {
     if (!inserted) {
       updatedObj.darkPreset = nextDarkPreset;
     }
-    fs.writeFileSync(tmpPath, `${JSON.stringify(updatedObj, null, 2)}\n`, 'utf8');
+    writePrivateFileSync(tmpPath, `${JSON.stringify(updatedObj, null, 2)}\n`, 'utf8', 0o600);
     fs.renameSync(tmpPath, cfgPath);
     if (rebuildBundleIfNeeded()) {
       void (async () => {
@@ -468,8 +406,13 @@ function readHostThemeMode() {
   return cachedHostThemeMode;
 }
 
+let coreIntegrityOk = false;
+let lastIntegrityErrKey = '';
+
 function rebuildBundleIfNeeded() {
   const coreFiles = [
+    path.join(CORE_DIR, 'manifest.json'),
+    path.join(CORE_DIR, 'daemon.mjs'),
     path.join(CORE_DIR, 'theme.css'),
     path.join(CORE_DIR, 'i18n.json'),
     path.join(CORE_DIR, 'runtime.js')
@@ -479,17 +422,33 @@ function rebuildBundleIfNeeded() {
     : [
         path.join(USER_DIR, 'config.json'),
         path.join(USER_DIR, 'custom.css'),
-        path.join(USER_DIR, 'i18n.override.json'),
-        path.join(USER_DIR, 'custom.js')
+        path.join(USER_DIR, 'i18n.override.json')
       ];
 
   const hostThemeMode = readHostThemeMode();
   const sig =
     [...coreFiles, ...userFiles].map(getFileMtimeSig).join('|') +
     `|hostTheme:${hostThemeMode || ''}|safe:${SAFE_MODE}|cli:${CLI_CHANNEL || ''}`;
-  if (sig === cachedBundleSig && cachedInjectScript) {
+  if (coreIntegrityOk && sig === cachedBundleSig && cachedInjectScript) {
     return false;
   }
+
+  const integrity = verifyCoreManifestIntegrity();
+  if (!integrity.ok) {
+    coreIntegrityOk = false;
+    cachedInjectScript = '';
+    cachedBundleSig = '';
+    const errKey = integrity.reason || JSON.stringify(integrity.mismatches || []);
+    if (errKey !== lastIntegrityErrKey) {
+      lastIntegrityErrKey = errKey;
+      const msg = `[SECURITY] Core manifest SHA-256 verification failed; refusing to inject: ${errKey}`;
+      console.error(`[Antigravity Daemon] ${msg}`);
+      logDaemonEvent(msg);
+    }
+    return false;
+  }
+  coreIntegrityOk = true;
+  lastIntegrityErrKey = '';
 
   const userCfg = SAFE_MODE ? {} : readJsonSafe(path.join(USER_DIR, 'config.json'), {});
   const enabled = SAFE_MODE ? true : userCfg.enabled !== false;
@@ -515,7 +474,6 @@ function rebuildBundleIfNeeded() {
     (contextLimit !== activeConfig.contextLimit || contextLimitOverride !== activeConfig.contextLimitOverride)
   ) {
     metricsCache.clear();
-    lastBestEffortPayloadCache.clear();
     metricsConfigEpoch += 1;
   }
 
@@ -532,11 +490,11 @@ function rebuildBundleIfNeeded() {
       coldBootHealer: true,
       zoomShortcuts: true,
       cdpAutoRelaunch: true,
-      customCss: true,
-      customJs: true
+      customCss: true
     },
     rawModules
   );
+  delete modules.customJs;
   if (!DatabaseSync) {
     modules.metrics = false;
   }
@@ -607,16 +565,23 @@ function rebuildBundleIfNeeded() {
     endpoints
   };
 
-  const baseCss = readTextSafe(path.join(CORE_DIR, 'theme.css'), '');
+  const baseCss = integrity.files['theme.css'];
   const customCss = !SAFE_MODE && modules.customCss ? readTextSafe(path.join(USER_DIR, 'custom.css'), '') : '';
 
-  const baseDict = readJsonSafe(path.join(CORE_DIR, 'i18n.json'), {});
+  let baseDict = {};
+  try {
+    const parsedDict = JSON.parse(integrity.files['i18n.json'].replace(/^\uFEFF/, ''));
+    if (parsedDict && typeof parsedDict === 'object' && !Array.isArray(parsedDict)) {
+      baseDict = parsedDict;
+    }
+  } catch {
+    baseDict = {};
+  }
   const rawOverrideDict = !SAFE_MODE ? readJsonSafe(path.join(USER_DIR, 'i18n.override.json'), {}) : {};
   const overrideDict = normalizeOverrideDict(rawOverrideDict);
   const mergedDict = Object.assign({}, baseDict, overrideDict);
 
-  const customJs = !SAFE_MODE && modules.customJs ? readTextSafe(path.join(USER_DIR, 'custom.js'), '') : '';
-  const runtimeTemplate = readTextSafe(path.join(CORE_DIR, 'runtime.js'), '');
+  const runtimeTemplate = integrity.files['runtime.js'];
 
   const hash = crypto
     .createHash('sha256')
@@ -625,7 +590,6 @@ function rebuildBundleIfNeeded() {
     .update(baseCss)
     .update(customCss)
     .update(JSON.stringify(mergedDict))
-    .update(customJs)
     .update(
       JSON.stringify({
         preset,
@@ -645,7 +609,6 @@ function rebuildBundleIfNeeded() {
 
   const bootPayload = {
     version: cachedPatchVersion,
-    platform: process.platform,
     hostThemeMode,
     enabled,
     preset,
@@ -667,8 +630,7 @@ function rebuildBundleIfNeeded() {
       modules,
       themeVars,
       darkThemeVars
-    },
-    customJs
+    }
   };
 
   cachedInjectScript = runtimeTemplate.replace('})(__AG_BOOT_PAYLOAD__);', () => `})(${JSON.stringify(bootPayload)});`);
@@ -684,10 +646,8 @@ const targetThemeModes = new Map();
 const targetDarkPresets = new Map();
 const targetMetaMap = new Map();
 
-rebuildBundleIfNeeded();
-
-const MY_PROC_START_MS = Math.round(Date.now() - process.uptime() * 1000);
 const DAEMON_LOG_FILE = path.join(os.tmpdir(), 'ag-theme-daemon.log');
+let daemonLogModeTightened = false;
 
 function logDaemonEvent(msg) {
   try {
@@ -697,12 +657,24 @@ function logDaemonEvent(msg) {
       if (st.size > 131072) {
         const buf = fs.readFileSync(DAEMON_LOG_FILE);
         const tail = buf.subarray(Math.max(0, buf.length - 32768));
-        fs.writeFileSync(DAEMON_LOG_FILE, Buffer.concat([tail, Buffer.from(line, 'utf8')]));
+        writePrivateFileSync(DAEMON_LOG_FILE, Buffer.concat([tail, Buffer.from(line, 'utf8')]), 'utf8', 0o600);
+        daemonLogModeTightened = true;
         return;
       }
     }
-    fs.appendFileSync(DAEMON_LOG_FILE, line, 'utf8');
+    fs.appendFileSync(DAEMON_LOG_FILE, line, { encoding: 'utf8', mode: 0o600 });
+    if (!daemonLogModeTightened) {
+      try {
+        fs.chmodSync(DAEMON_LOG_FILE, 0o600);
+      } catch {}
+      daemonLogModeTightened = true;
+    }
   } catch {}
+}
+
+if (!rebuildBundleIfNeeded() || !coreIntegrityOk || !cachedInjectScript) {
+  console.error('[Antigravity Daemon] Refusing to start: core/manifest.json SHA-256 verification failed. Run `node install.mjs install` or `node install.mjs build-manifest` to restore trusted core files.');
+  process.exit(1);
 }
 
 function sleepSync(ms) {
@@ -713,113 +685,45 @@ function sleepSync(ms) {
 
 function parsePidFile(filePath) {
   try {
-    if (!fs.existsSync(filePath)) return { pid: 0, startMs: 0, stopRequested: false };
+    if (!fs.existsSync(filePath)) return { pid: 0, stopRequested: false };
     const raw = fs.readFileSync(filePath, 'utf8').trim();
-    if (!raw) return { pid: 0, startMs: 0, stopRequested: false };
+    if (!raw) return { pid: 0, stopRequested: false };
     const lines = raw.split(/\r?\n/);
     const pid = parseInt(lines[0], 10) || 0;
     const second = (lines[1] || '').trim();
-    if (second === 'STOP') return { pid, startMs: 0, stopRequested: true };
-    let startMs = parseInt(second, 10) || 0;
-    if (!startMs && pid > 0) {
-      try {
-        startMs = Math.round(fs.statSync(filePath).mtimeMs);
-      } catch {}
-    }
-    return { pid, startMs, stopRequested: false };
+    return { pid, stopRequested: second === 'STOP' };
   } catch {
-    return { pid: 0, startMs: 0, stopRequested: false };
+    return { pid: 0, stopRequested: false };
   }
 }
 
-function checkDaemonPidState(pid, recordedStartMs = 0) {
+function checkDaemonPidState(pid) {
   if (!pid || pid <= 0 || pid === process.pid) return 'not_daemon';
-  let kill0Eperm = false;
   try {
     process.kill(pid, 0);
-  } catch (err) {
-    if (err && err.code === 'EPERM') {
-      kill0Eperm = true;
-    } else {
+  } catch {
+    return 'not_daemon';
+  }
+  const ps = spawnSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8', timeout: 2000 });
+  if (ps.status === 0 && ps.stdout) {
+    const cmd = String(ps.stdout).trim().toLowerCase();
+    if (cmd && !cmd.includes('daemon.mjs') && !cmd.includes('antigravity-font-daemon')) {
       return 'not_daemon';
     }
   }
-  if (process.platform === 'win32') {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const res = spawnSync('tasklist', ['/FI', `PID eq ${Number(pid)}`, '/FO', 'CSV', '/NH'], {
-          windowsHide: true,
-          encoding: 'utf8',
-          timeout: 4000
-        });
-        if (res.status === 0) {
-          const out = String(res.stdout || '').toLowerCase();
-          if (!out.includes('node.exe')) return 'not_daemon';
-        }
-        const psCmd = [
-          `$gp = Get-Process -Id ${Number(pid)} -ErrorAction SilentlyContinue`,
-          `if (-not $gp) { [Console]::Out.WriteLine('STATE=GONE'); exit 0 }`,
-          `if ($gp.ProcessName -ne 'node') { [Console]::Out.WriteLine('STATE=NOT_NODE'); exit 0 }`,
-          `$ms = try { ([DateTimeOffset]$gp.StartTime).ToUnixTimeMilliseconds() } catch { 0 }`,
-          `[Console]::Out.WriteLine("STARTMS=$ms"); [Console]::Out.Flush()`,
-          `$cmd = try { (Get-CimInstance Win32_Process -Filter "ProcessId = ${Number(pid)}" -ErrorAction SilentlyContinue).CommandLine } catch { '' }`,
-          `[Console]::Out.WriteLine("CMD=$cmd")`
-        ].join('; ');
-        const cimRes = spawnSync(
-          'powershell',
-          ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', psCmd],
-          {
-            windowsHide: true,
-            encoding: 'utf8',
-            timeout: 6000
-          }
-        );
-        const rawOut = String(cimRes.stdout || '');
-        if (rawOut.includes('STATE=GONE') || rawOut.includes('STATE=NOT_NODE')) {
-          return 'not_daemon';
-        }
-        const msMatch = rawOut.match(/STARTMS=(\d+)/);
-        const procStartMs = msMatch ? parseInt(msMatch[1], 10) || 0 : 0;
-        const cmdMatch = rawOut.match(/CMD=([^\r\n]*)/);
-        if (cmdMatch) {
-          const cmdLine = cmdMatch[1].trim().toLowerCase();
-          if (cmdLine) {
-            if (cmdLine.includes('daemon.mjs') || cmdLine.includes('antigravity-font-daemon')) {
-              return 'confirmed';
-            }
-            return 'not_daemon';
-          }
-        }
-        // cmdLine 为空（如中完整性探测高完整性 node.exe 或登录风暴期 WMI 超时）：用 Win32 GetProcessTimes 内核创建时间精准比对
-        if (procStartMs > 0 && recordedStartMs > 0) {
-          return Math.abs(procStartMs - recordedStartMs) <= 5000 ? 'confirmed' : 'not_daemon';
-        }
-        if (cimRes.status === 0) {
-          try {
-            process.kill(pid, 0);
-            return 'uncertain';
-          } catch (e) {
-            return e && e.code === 'EPERM' ? 'uncertain' : 'not_daemon';
-          }
-        }
-      } catch {}
-    }
-    return 'uncertain';
-  }
-  if (kill0Eperm) return 'not_daemon';
   return 'confirmed';
 }
 
 const pidKey = CLI_CHANNEL || 'default';
 const PID_FILE = path.join(os.tmpdir(), `ag-theme-daemon-${pidKey}.pid`);
-const MY_PID_PAYLOAD = `${process.pid}\n${MY_PROC_START_MS}`;
+const MY_PID_PAYLOAD = String(process.pid);
 let daemonExiting = false;
 let pidHealTimer = null;
 let pidWatcher = null;
 
 function requestCooperativeStop(targetPid, waitMs = 800) {
   try {
-    fs.writeFileSync(PID_FILE, `${targetPid}\nSTOP`, 'utf8');
+    writePrivateFileSync(PID_FILE, `${targetPid}\nSTOP`, 'utf8', 0o600);
     const steps = Math.max(1, Math.ceil(waitMs / 50));
     for (let i = 0; i < steps; i++) {
       sleepSync(50);
@@ -904,7 +808,7 @@ function checkPidFileOwnership() {
           if (daemonExiting) return;
           try {
             if (!fs.existsSync(PID_FILE)) {
-              fs.writeFileSync(PID_FILE, MY_PID_PAYLOAD, 'utf8');
+              writePrivateFileSync(PID_FILE, MY_PID_PAYLOAD, 'utf8', 0o600);
               armPidWatcher();
             } else {
               checkPidFileOwnership();
@@ -932,7 +836,7 @@ function checkPidFileOwnership() {
         shutdownDaemon(`PID lock superseded by newer daemon PID ${cur.pid}; yielding cleanly.`, false);
         return;
       }
-      fs.writeFileSync(PID_FILE, MY_PID_PAYLOAD, 'utf8');
+      writePrivateFileSync(PID_FILE, MY_PID_PAYLOAD, 'utf8', 0o600);
       armPidWatcher();
     }
   } catch {}
@@ -941,10 +845,9 @@ function checkPidFileOwnership() {
 if (!RUN_ONCE) {
   try {
     if (fs.existsSync(PID_FILE)) {
-      const { pid: oldPid, startMs: oldStartMs, stopRequested } = parsePidFile(PID_FILE);
+      const { pid: oldPid, stopRequested } = parsePidFile(PID_FILE);
       if (!stopRequested && oldPid > 0 && oldPid !== process.pid) {
-        const pidState = checkDaemonPidState(oldPid, oldStartMs);
-        if (pidState === 'confirmed') {
+        if (checkDaemonPidState(oldPid) === 'confirmed') {
           let killed = false;
           try {
             process.kill(oldPid, 'SIGTERM');
@@ -964,13 +867,10 @@ if (!RUN_ONCE) {
             requestCooperativeStop(oldPid, 1200);
           }
           logDaemonEvent(`Replaced existing daemon PID ${oldPid}.`);
-        } else if (pidState === 'uncertain') {
-          requestCooperativeStop(oldPid, 350);
-          logDaemonEvent(`PID state uncertain for PID ${oldPid}; taking over lock instead of exiting.`);
         }
       }
     }
-    fs.writeFileSync(PID_FILE, MY_PID_PAYLOAD, 'utf8');
+    writePrivateFileSync(PID_FILE, MY_PID_PAYLOAD, 'utf8', 0o600);
     armPidWatcher();
     const cleanPid = () => {
       if (pidWatcher) {
@@ -1068,46 +968,16 @@ function fmtNum(n) {
   return (n || 0).toLocaleString('en-US');
 }
 
-const resolvedCascadeDbCache = new Map();
-const negativeCascadeWslCache = new Map(); // cacheKey -> expireAtMs
-const lastKnownDbStateCache = new Map(); // dbPath -> { dbPath, rawSig, sig }
-const lastBestEffortPayloadCache = new Map(); // dbPath -> payload
 const UUID_RE = /^[0-9a-f-]{36}$/i;
 const DB_FILE_RE = /^([0-9a-f-]{36})\.db$/i;
 const textDecoder = new TextDecoder('utf-8', { fatal: false });
 const MAX_CHILD_METRICS_CACHE_SIZE = 4096;
 const MAX_NO_META_PENDING_IDS = 64;
 const LINEAGE_TICK_MAX_OPENS = 45;
-const LINEAGE_TICK_MAX_OPENS_UNC = 8;
 const LINEAGE_TICK_MAX_MS = 60;
-const NO_META_RESCAN_LOCAL_MS = 2500;
-const NO_META_RESCAN_UNC_MS = 15000;
+const NO_META_RESCAN_MS = 2500;
 const childMetricsCache = new Map(); // dbPath -> { sig, hasData, calls, totalIn, totalCache, totalOut, totalThink, totalResp }
 const lineageStateByDir = new Map(); // conversationsDir -> dirState
-let zhTitleStatus = { state: 'ok', label: '', detail: '', cmd: '' };
-
-function escapeHtmlSafe(str) {
-  return String(str || '')
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-function setZhTitleStatus(nextState, label = '', detail = '', cmd = '') {
-  if (
-    zhTitleStatus.state === nextState &&
-    zhTitleStatus.label === label &&
-    zhTitleStatus.detail === detail &&
-    zhTitleStatus.cmd === cmd
-  ) {
-    return;
-  }
-  zhTitleStatus = { state: nextState, label, detail, cmd };
-  metricsCache.clear();
-  lastBestEffortPayloadCache.clear();
-  metricsConfigEpoch += 1;
-}
 
 function setChildMetricsCache(dbPath, entry) {
   if (childMetricsCache.has(dbPath)) childMetricsCache.delete(dbPath);
@@ -1115,26 +985,6 @@ function setChildMetricsCache(dbPath, entry) {
   if (childMetricsCache.size > MAX_CHILD_METRICS_CACHE_SIZE) {
     const oldestKey = childMetricsCache.keys().next().value;
     if (oldestKey !== undefined) childMetricsCache.delete(oldestKey);
-  }
-}
-
-function isUncPath(p) {
-  if (!p || process.platform !== 'win32') return false;
-  return (
-    p.startsWith('\\\\wsl.localhost\\') ||
-    p.startsWith('\\\\wsl$\\') ||
-    p.startsWith('\\\\?\\UNC\\') ||
-    p.startsWith('\\\\') ||
-    p.startsWith('//wsl')
-  );
-}
-
-function setBoundedMap(map, key, val, maxEntries = 64) {
-  if (map.has(key)) map.delete(key);
-  map.set(key, val);
-  if (map.size > maxEntries) {
-    const oldestKey = map.keys().next().value;
-    if (oldestKey !== undefined) map.delete(oldestKey);
   }
 }
 
@@ -1174,72 +1024,7 @@ function resolveConversationDbPath(cascadeId, endpointOrDir) {
   if (typeof endpointOrDir === 'string') {
     return path.join(endpointOrDir, `${cascadeId}.db`);
   }
-
   const primaryDir = endpointOrDir.conversationsDir || '';
-  const cacheKey = `${endpointOrDir.channel || 'default'}|${primaryDir}|${cascadeId}`;
-  const cachedPath = resolvedCascadeDbCache.get(cacheKey);
-  if (cachedPath) {
-    const cachedUnc = isUncPath(cachedPath);
-    if (cachedUnc && Date.now() < wslUncBackoffUntil) {
-      return cachedPath;
-    }
-    const tCheck = Date.now();
-    const exists = fs.existsSync(cachedPath);
-    if (cachedUnc && Date.now() - tCheck > 400) {
-      wslUncBackoffUntil = Date.now() + 45000;
-    }
-    if (exists) {
-      return cachedPath;
-    }
-    resolvedCascadeDbCache.delete(cacheKey);
-  }
-
-  const remember = (foundPath) => {
-    negativeCascadeWslCache.delete(cacheKey);
-    if (resolvedCascadeDbCache.size >= 64) {
-      const oldestKey = resolvedCascadeDbCache.keys().next().value;
-      if (oldestKey !== undefined) resolvedCascadeDbCache.delete(oldestKey);
-    }
-    resolvedCascadeDbCache.set(cacheKey, foundPath);
-    return foundPath;
-  };
-
-  if (primaryDir) {
-    const primaryCandidate = path.join(primaryDir, `${cascadeId}.db`);
-    if (fs.existsSync(primaryCandidate)) {
-      return remember(primaryCandidate);
-    }
-  }
-
-  const now = Date.now();
-  if (
-    process.platform === 'win32' &&
-    !endpointOrDir.explicitConvDir &&
-    endpointOrDir.portFile &&
-    now >= wslUncBackoffUntil &&
-    (negativeCascadeWslCache.get(cacheKey) || 0) <= now
-  ) {
-    const t0 = Date.now();
-    const wslDirs = resolveWin32WslConversationsDirs(
-      endpointOrDir.portFile,
-      endpointOrDir.geminiSubDir || '.gemini/antigravity'
-    );
-    for (let i = 0; i < wslDirs.length; i++) {
-      const wslCandidate = path.join(wslDirs[i], `${cascadeId}.db`);
-      if (fs.existsSync(wslCandidate)) {
-        return remember(wslCandidate);
-      }
-      if (Date.now() - t0 > 400) break;
-    }
-    if (Date.now() - t0 > 400) {
-      wslUncBackoffUntil = Date.now() + 45000;
-    }
-    if (negativeCascadeWslCache.size >= 128) {
-      negativeCascadeWslCache.clear();
-    }
-    negativeCascadeWslCache.set(cacheKey, Date.now() + 10000);
-  }
-
   return primaryDir ? path.join(primaryDir, `${cascadeId}.db`) : '';
 }
 
@@ -1247,36 +1032,16 @@ function getDbState(cascadeId, endpointOrDir) {
   try {
     const dbPath = resolveConversationDbPath(cascadeId, endpointOrDir);
     if (!dbPath) return null;
-    const unc = isUncPath(dbPath);
-    if (unc && Date.now() < wslUncBackoffUntil) {
-      const prev = lastKnownDbStateCache.get(dbPath);
-      return prev ? { ...prev, uncDeferred: true } : { dbPath, rawSig: 'unc_deferred', sig: `${dbPath}#unc_deferred`, uncDeferred: true };
-    }
-    const t0 = Date.now();
     const st = fs.statSync(dbPath, { throwIfNoEntry: false });
-    if (unc && Date.now() - t0 > 400) {
-      wslUncBackoffUntil = Date.now() + 45000;
-    }
-    if (!st) {
-      lastKnownDbStateCache.delete(dbPath);
-      return null;
-    }
-    let wst = null;
-    if (!unc || Date.now() >= wslUncBackoffUntil) {
-      wst = fs.statSync(`${dbPath}-wal`, { throwIfNoEntry: false });
-      if (unc && Date.now() - t0 > 400) {
-        wslUncBackoffUntil = Date.now() + 45000;
-      }
-    }
+    if (!st) return null;
+    const wst = fs.statSync(`${dbPath}-wal`, { throwIfNoEntry: false });
     const walSig = wst ? `${wst.mtimeMs}:${wst.size}` : '0:0';
     const rawSig = `${st.mtimeMs}:${st.size}|${walSig}`;
-    const stateObj = {
+    return {
       dbPath,
       rawSig,
       sig: `${dbPath}#${rawSig}`
     };
-    setBoundedMap(lastKnownDbStateCache, dbPath, stateObj, 64);
-    return stateObj;
   } catch {
     return null;
   }
@@ -1286,101 +1051,14 @@ function getDbSignature(cascadeId, endpointOrDir) {
   return getDbState(cascadeId, endpointOrDir)?.sig || null;
 }
 
-let wslSqliteTmpSeq = 0;
-let sqliteUriSupported = null;
-
-function canUseSqliteFileUri() {
-  if (sqliteUriSupported !== null) return sqliteUriSupported;
-  if (!DatabaseSync) return false;
-  let probeDb = null;
-  try {
-    // Node >= 22.15 / 24 启用 SQLITE_OPEN_URI 时 file::memory: 零磁盘 I/O 秒开；Node 22.13~22.14 未启用时立即失败且 readOnly 绝不落盘建文件
-    probeDb = new DatabaseSync('file::memory:', { readOnly: true });
-    sqliteUriSupported = true;
-  } catch {
-    sqliteUriSupported = false;
-  } finally {
-    try {
-      probeDb?.close();
-    } catch {}
-  }
-  return sqliteUriSupported;
-}
-
-function buildSqliteImmutableUncUri(uncDbPath) {
-  let normalized = String(uncDbPath || '').replace(/\\/g, '/');
-  if (normalized.startsWith('//?/UNC/')) {
-    normalized = '//' + normalized.slice(8);
-  }
-  const encoded = normalized
-    .split('/')
-    .map((seg) => encodeURIComponent(seg))
-    .join('/');
-  return `file://${encoded}?immutable=1`;
-}
-
 function withReadOnlyDb(dbPath, timeoutMs, fn) {
-  if (!isUncPath(dbPath)) {
-    const db = new DatabaseSync(dbPath, { readOnly: true, timeout: timeoutMs });
-    try {
-      return fn(db);
-    } finally {
-      try {
-        db.close();
-      } catch {}
-    }
-  }
-
-  const walPath = `${dbPath}-wal`;
-  let hasActiveWal = false;
+  const db = new DatabaseSync(dbPath, { readOnly: true, timeout: timeoutMs });
   try {
-    const wst = fs.statSync(walPath, { throwIfNoEntry: false });
-    hasActiveWal = Boolean(wst && wst.size > 0);
-  } catch {}
-
-  if (!hasActiveWal && canUseSqliteFileUri()) {
-    let immDb = null;
-    try {
-      immDb = new DatabaseSync(buildSqliteImmutableUncUri(dbPath), { readOnly: true, timeout: timeoutMs });
-      const out = fn(immDb);
-      immDb.close();
-      immDb = null;
-      return out;
-    } catch (immErr) {
-      try {
-        immDb?.close();
-      } catch {}
-      const msg = String(immErr?.message || '');
-      if (/no such table/i.test(msg)) {
-        throw immErr;
-      }
-    }
-  }
-
-  wslSqliteTmpSeq = (wslSqliteTmpSeq + 1) % 1000000;
-  const tmpBase = path.join(
-    os.tmpdir(),
-    `ag-wsl-sqlite-${process.pid}-${Date.now()}-${wslSqliteTmpSeq}.db`
-  );
-  let tmpDb = null;
-  try {
-    fs.copyFileSync(dbPath, tmpBase);
-    if (hasActiveWal) {
-      try {
-        fs.copyFileSync(walPath, `${tmpBase}-wal`);
-      } catch {}
-    }
-    tmpDb = new DatabaseSync(tmpBase, { readOnly: true, timeout: timeoutMs });
-    return fn(tmpDb);
+    return fn(db);
   } finally {
     try {
-      tmpDb?.close();
+      db.close();
     } catch {}
-    for (const suffix of ['', '-wal', '-shm']) {
-      try {
-        fs.rmSync(`${tmpBase}${suffix}`, { force: true });
-      } catch {}
-    }
   }
 }
 
@@ -1400,9 +1078,6 @@ function readTrajectoryLineage(dbPath) {
     const msg = String(err?.message || '');
     if (/no such table/i.test(msg)) {
       return { ok: true, hasMeta: false, parentId: '', rootId: '' };
-    }
-    if (isUncPath(dbPath) && /locked|busy|malformed|disk i\/o|ebusy|eacces|enoent/i.test(msg)) {
-      return { ok: false, error: err };
     }
     if (!/locked|busy/i.test(msg)) {
       return { ok: true, hasMeta: false, permanentInvalid: true, parentId: '', rootId: '' };
@@ -1466,7 +1141,7 @@ function rememberNoMetaPending(dirState, uuid, statSig) {
 
 function refreshLineageIndex(conversationsDir) {
   if (!conversationsDir || !DatabaseSync) {
-    return { dirState: null, isDraining: false, backoffSkipped: false };
+    return { dirState: null, isDraining: false };
   }
   let dirState = lineageStateByDir.get(conversationsDir);
   if (!dirState) {
@@ -1484,45 +1159,25 @@ function refreshLineageIndex(conversationsDir) {
     lineageStateByDir.set(conversationsDir, dirState);
   }
 
-  const unc = isUncPath(conversationsDir);
   const nowMs = Date.now();
-  if (unc && nowMs < wslUncBackoffUntil) {
-    return {
-      dirState,
-      isDraining: dirState.unindexedQueue.length > 0,
-      backoffSkipped: true
-    };
-  }
-
   const dirSt = fs.statSync(conversationsDir, { throwIfNoEntry: false });
   if (!dirSt || !dirSt.isDirectory()) {
-    return { dirState, isDraining: false, backoffSkipped: false };
+    return { dirState, isDraining: false };
   }
 
   const dirChanged = dirSt.mtimeMs !== dirState.dirMtimeMs && dirSt.mtimeMs !== dirState.scanningDirMtimeMs;
-  const tWallStart = nowMs;
-  let backoffSkipped = false;
 
   if (dirChanged) {
     let entries;
     try {
       entries = fs.readdirSync(conversationsDir);
     } catch {
-      if (unc && Date.now() - tWallStart > 400) {
-        wslUncBackoffUntil = Date.now() + 45000;
-        backoffSkipped = true;
-      }
-      return { dirState, isDraining: dirState.unindexedQueue.length > 0, backoffSkipped };
+      return { dirState, isDraining: dirState.unindexedQueue.length > 0 };
     }
 
     const seenIds = new Set();
     let enqueued = false;
     for (let i = 0; i < entries.length; i++) {
-      if (unc && Date.now() - tWallStart > 400) {
-        wslUncBackoffUntil = Date.now() + 45000;
-        backoffSkipped = true;
-        break;
-      }
       const m = entries[i].match(DB_FILE_RE);
       if (!m) continue;
       const uuid = m[1];
@@ -1544,42 +1199,32 @@ function refreshLineageIndex(conversationsDir) {
       enqueued = true;
     }
 
-    if (!backoffSkipped) {
-      for (const existingId of Array.from(dirState.nodes.keys())) {
-        if (!seenIds.has(existingId)) {
-          deleteNodeLineage(dirState, existingId);
-        }
+    for (const existingId of Array.from(dirState.nodes.keys())) {
+      if (!seenIds.has(existingId)) {
+        deleteNodeLineage(dirState, existingId);
       }
-      if (dirState.unindexedQueue.length > 0) {
-        const nextQueue = [];
-        for (let i = 0; i < dirState.unindexedQueue.length; i++) {
-          const item = dirState.unindexedQueue[i];
-          if (seenIds.has(item.uuid)) {
-            nextQueue.push(item);
-          } else {
-            dirState.unindexedSet.delete(item.uuid);
-          }
-        }
-        if (enqueued || nextQueue.length !== dirState.unindexedQueue.length) {
-          nextQueue.sort((a, b) => b.mtimeMs - a.mtimeMs);
-        }
-        dirState.unindexedQueue = nextQueue;
-      }
-      dirState.scanningDirMtimeMs = dirSt.mtimeMs;
-    } else if (enqueued && dirState.unindexedQueue.length > 1) {
-      dirState.unindexedQueue.sort((a, b) => b.mtimeMs - a.mtimeMs);
     }
+    if (dirState.unindexedQueue.length > 0) {
+      const nextQueue = [];
+      for (let i = 0; i < dirState.unindexedQueue.length; i++) {
+        const item = dirState.unindexedQueue[i];
+        if (seenIds.has(item.uuid)) {
+          nextQueue.push(item);
+        } else {
+          dirState.unindexedSet.delete(item.uuid);
+        }
+      }
+      if (enqueued || nextQueue.length !== dirState.unindexedQueue.length) {
+        nextQueue.sort((a, b) => b.mtimeMs - a.mtimeMs);
+      }
+      dirState.unindexedQueue = nextQueue;
+    }
+    dirState.scanningDirMtimeMs = dirSt.mtimeMs;
   } else if (dirState.unindexedQueue.length === 0) {
-    const pendingRescanMs = unc ? NO_META_RESCAN_UNC_MS : NO_META_RESCAN_LOCAL_MS;
-    if (dirState.noMetaPending.size > 0 && nowMs - dirState.lastPendingScanAt >= pendingRescanMs) {
+    if (dirState.noMetaPending.size > 0 && nowMs - dirState.lastPendingScanAt >= NO_META_RESCAN_MS) {
       dirState.lastPendingScanAt = nowMs;
       const newlyChanged = [];
       for (const [uuid, prevSig] of Array.from(dirState.noMetaPending.entries())) {
-        if (unc && Date.now() - tWallStart > 400) {
-          wslUncBackoffUntil = Date.now() + 45000;
-          backoffSkipped = true;
-          break;
-        }
         if (dirState.nodes.get(uuid)?.hasMeta) {
           dirState.noMetaPending.delete(uuid);
           continue;
@@ -1603,33 +1248,19 @@ function refreshLineageIndex(conversationsDir) {
   }
 
   if (dirState.unindexedQueue.length === 0) {
-    if (!backoffSkipped && dirState.scanningDirMtimeMs >= 0) {
+    if (dirState.scanningDirMtimeMs >= 0) {
       dirState.dirMtimeMs = dirState.scanningDirMtimeMs;
     }
-    return { dirState, isDraining: false, backoffSkipped };
-  }
-
-  if (backoffSkipped || (unc && Date.now() < wslUncBackoffUntil)) {
-    return {
-      dirState,
-      isDraining: dirState.unindexedQueue.length > 0,
-      backoffSkipped: true
-    };
+    return { dirState, isDraining: false };
   }
 
   const tPerfStart = performance.now();
-  const maxTickOpens = unc ? LINEAGE_TICK_MAX_OPENS_UNC : LINEAGE_TICK_MAX_OPENS;
   let opens = 0;
   let qIdx = 0;
   const busyRetry = [];
 
   while (qIdx < dirState.unindexedQueue.length) {
-    if (opens > 0 && (opens >= maxTickOpens || performance.now() - tPerfStart >= LINEAGE_TICK_MAX_MS)) {
-      break;
-    }
-    if (unc && Date.now() - tWallStart > 400) {
-      wslUncBackoffUntil = Date.now() + 45000;
-      backoffSkipped = true;
+    if (opens > 0 && (opens >= LINEAGE_TICK_MAX_OPENS || performance.now() - tPerfStart >= LINEAGE_TICK_MAX_MS)) {
       break;
     }
     const item = dirState.unindexedQueue[qIdx++];
@@ -1673,19 +1304,13 @@ function refreshLineageIndex(conversationsDir) {
     dirState.unindexedQueue = remaining;
   }
 
-  if (unc && !backoffSkipped && Date.now() - tWallStart > 400) {
-    wslUncBackoffUntil = Date.now() + 45000;
-    backoffSkipped = true;
-  }
-
-  if (dirState.unindexedQueue.length === 0 && !backoffSkipped && dirState.scanningDirMtimeMs >= 0) {
+  if (dirState.unindexedQueue.length === 0 && dirState.scanningDirMtimeMs >= 0) {
     dirState.dirMtimeMs = dirState.scanningDirMtimeMs;
   }
 
   return {
     dirState,
-    isDraining: dirState.unindexedQueue.length > 0,
-    backoffSkipped
+    isDraining: dirState.unindexedQueue.length > 0
   };
 }
 
@@ -1738,59 +1363,28 @@ function getCompositeChildSnapshot(cascadeId, conversationsDir, parentSig = '') 
       descendantIds: [],
       childSigs: new Map(),
       isDraining: false,
-      partialStale: false,
       sig: parentSig
     };
   }
 
-  const { dirState, isDraining, backoffSkipped } = refreshLineageIndex(conversationsDir);
+  const { dirState, isDraining } = refreshLineageIndex(conversationsDir);
   const descendantIds = findDescendantIds(cascadeId, dirState);
   const childSigs = new Map();
   const childSigParts = [];
-  let partialStale = Boolean(backoffSkipped);
-  const unc = isUncPath(conversationsDir);
-  const t0 = Date.now();
 
-  if (unc && Date.now() < wslUncBackoffUntil) {
-    partialStale = true;
-    for (let i = 0; i < descendantIds.length; i++) {
-      const cid = descendantIds[i];
-      const prev = childMetricsCache.get(path.join(conversationsDir, `${cid}.db`))?.sig || '';
-      childSigs.set(cid, prev || 'unc_deferred');
-      childSigParts.push(`${cid}=${prev || '0:0|0:0'}`);
-    }
-  } else {
-    for (let i = 0; i < descendantIds.length; i++) {
-      const cid = descendantIds[i];
-      if (unc && (Date.now() < wslUncBackoffUntil || Date.now() - t0 > 400)) {
-        if (Date.now() >= wslUncBackoffUntil) {
-          wslUncBackoffUntil = Date.now() + 45000;
-        }
-        partialStale = true;
-        const prev = childMetricsCache.get(path.join(conversationsDir, `${cid}.db`))?.sig || '';
-        childSigs.set(cid, prev || 'unc_deferred');
-        childSigParts.push(`${cid}=${prev || '0:0|0:0'}`);
-        continue;
-      }
-      const statInfo = getDbStatByPath(path.join(conversationsDir, `${cid}.db`));
-      if (unc && Date.now() - t0 > 400) {
-        wslUncBackoffUntil = Date.now() + 45000;
-        partialStale = true;
-      }
-      childSigs.set(cid, statInfo ? statInfo.sig : 'missing');
-      childSigParts.push(`${cid}=${statInfo ? statInfo.sig : '0:0|0:0'}`);
-    }
+  for (let i = 0; i < descendantIds.length; i++) {
+    const cid = descendantIds[i];
+    const statInfo = getDbStatByPath(path.join(conversationsDir, `${cid}.db`));
+    childSigs.set(cid, statInfo ? statInfo.sig : 'missing');
+    childSigParts.push(`${cid}=${statInfo ? statInfo.sig : '0:0|0:0'}`);
   }
 
-  const uncBackoffActive = Boolean(unc && Date.now() < wslUncBackoffUntil);
   return {
     conversationsDir,
     descendantIds,
     childSigs,
     isDraining: Boolean(isDraining),
-    partialStale,
-    uncBackoffActive,
-    sig: `${parentSig}|children:${childSigParts.join(',')}${isDraining ? '|draining' : ''}${partialStale ? '|stale' : ''}`
+    sig: `${parentSig}|children:${childSigParts.join(',')}${isDraining ? '|draining' : ''}`
   };
 }
 
@@ -1798,9 +1392,6 @@ function loadChildScalarMetrics(childId, conversationsDir, knownStatSig = null, 
   if (knownStatSig === 'missing') return { exists: false };
   const dbPath = path.join(conversationsDir, `${childId}.db`);
   const cached = childMetricsCache.get(dbPath);
-  if (knownStatSig === 'unc_deferred') {
-    return { exists: true, deferred: true, staleMetrics: cached || null };
-  }
   if (!knownStatSig && !allowUncachedOpen) {
     return cached ? { exists: true, deferred: true, staleMetrics: cached } : { exists: true, deferred: true, staleMetrics: null };
   }
@@ -1850,10 +1441,7 @@ function loadChildScalarMetrics(childId, conversationsDir, knownStatSig = null, 
     });
   } catch (err) {
     const msg = String(err?.message || '');
-    if (
-      /locked|busy/i.test(msg) ||
-      (isUncPath(dbPath) && /malformed|disk i\/o|ebusy|eacces|enoent/i.test(msg))
-    ) {
+    if (/locked|busy/i.test(msg)) {
       return { exists: true, fromCache: false, transientError: true, staleMetrics: cached || null };
     }
     const emptyEntry = {
@@ -1929,29 +1517,10 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
   const compositeSig = childSnap?.sig || sig;
 
   const cached = metricsCache.get(dbPath);
-  if (cached && cached.sig === compositeSig && !childSnap?.isDraining && !childSnap?.partialStale) {
+  if (cached && cached.sig === compositeSig && !childSnap?.isDraining) {
     return cached.payload;
   }
 
-  const uncParent = isUncPath(dbPath);
-  if (uncParent && Date.now() < wslUncBackoffUntil) {
-    const bestEffort = cached?.payload || lastBestEffortPayloadCache.get(dbPath) || null;
-    if (bestEffort) {
-      return {
-        ...bestEffort,
-        partialStale: true,
-        uncBackoffActive: true
-      };
-    }
-    return {
-      cascadeId,
-      transientError: true,
-      uncBackoffActive: true,
-      cachedPayload: null
-    };
-  }
-
-  const tParentWallStart = Date.now();
   try {
     const parentDbRes = withReadOnlyDb(dbPath, 200, (db) => {
       const metaStat = db.prepare('SELECT COUNT(*) AS cnt, COALESCE(MAX(idx), -1) AS maxIdx FROM gen_metadata').get();
@@ -2067,18 +1636,15 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
         hasData: false,
         sig: compositeSig,
         isDraining: Boolean(childSnap?.isDraining),
-        partialStale: Boolean(childSnap?.partialStale)
+        partialStale: false
       };
-      if (!childSnap?.isDraining && !childSnap?.partialStale) {
+      if (!childSnap?.isDraining) {
         setMetricsCache(dbPath, { sig: compositeSig, payload: emptyPayload });
       }
       return emptyPayload;
     }
 
     const { inc, userStepsCount, rawTurnSteps } = parentDbRes;
-    if (uncParent && Date.now() - tParentWallStart > 400) {
-      wslUncBackoffUntil = Date.now() + 45000;
-    }
     setIncrementalMetrics(dbPath, inc);
 
     const { validItems: valid, totalIn, totalCache, totalOut, totalThink, totalResp } = inc;
@@ -2088,9 +1654,9 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
         hasData: false,
         sig: compositeSig,
         isDraining: Boolean(childSnap?.isDraining),
-        partialStale: Boolean(childSnap?.partialStale)
+        partialStale: false
       };
-      if (!childSnap?.isDraining && !childSnap?.partialStale) {
+      if (!childSnap?.isDraining) {
         setMetricsCache(dbPath, { sig: compositeSig, payload: emptyPayload });
       }
       return emptyPayload;
@@ -2098,7 +1664,7 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
 
     const descendantIds = childSnap?.descendantIds || [];
     const isDraining = Boolean(childSnap?.isDraining);
-    let partialStale = Boolean(childSnap?.partialStale);
+    let partialStale = false;
     let childCount = 0;
     let childCalls = 0;
     let childIn = 0;
@@ -2108,26 +1674,16 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
     let childResp = 0;
     let childSqlOpens = 0;
     const tChildPerfStart = performance.now();
-    const tChildWallStart = Date.now();
-    const uncChildren = isUncPath(conversationsDir);
-
-    const maxChildOpens = uncChildren ? LINEAGE_TICK_MAX_OPENS_UNC : LINEAGE_TICK_MAX_OPENS;
 
     for (let i = 0; i < descendantIds.length; i++) {
       const childId = descendantIds[i];
       if (childId === cascadeId) continue;
 
       const knownChildSig = childSnap.childSigs?.get(childId) || null;
-      const uncNowBlocked =
-        uncChildren && (Date.now() < wslUncBackoffUntil || Date.now() - tChildWallStart > 400);
-      if (uncChildren && Date.now() - tChildWallStart > 400 && Date.now() >= wslUncBackoffUntil) {
-        wslUncBackoffUntil = Date.now() + 45000;
-      }
       const allowUncachedOpen =
-        !uncNowBlocked &&
-        (childSqlOpens === 0 ||
-          (childSqlOpens < maxChildOpens &&
-            performance.now() - tChildPerfStart < LINEAGE_TICK_MAX_MS));
+        childSqlOpens === 0 ||
+        (childSqlOpens < LINEAGE_TICK_MAX_OPENS &&
+          performance.now() - tChildPerfStart < LINEAGE_TICK_MAX_MS);
       const childRes = loadChildScalarMetrics(
         childId,
         conversationsDir,
@@ -2137,9 +1693,6 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
       if (!childRes.exists) continue;
       if (!childRes.fromCache && !childRes.deferred) {
         childSqlOpens += 1;
-        if (uncChildren && Date.now() - tChildWallStart > 400) {
-          wslUncBackoffUntil = Date.now() + 45000;
-        }
       }
 
       let cm = null;
@@ -2202,12 +1755,6 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
     const sessionCacheRate = totalIn + totalCache > 0 ? ((totalCache / (totalIn + totalCache)) * 100).toFixed(1) : '0.0';
     const remainCtx = Math.max(0, contextLimitTokens - last.ctx);
 
-    const zhWarnActive =
-      process.platform === 'darwin' &&
-      (zhTitleStatus.state === 'tcc_blocked' || zhTitleStatus.state === 'stale_inode');
-    const zhWarnInlineHtml = zhWarnActive
-      ? `<span class="ag-sep">·</span><span class="ag-zh-warn-dot" title="${escapeHtmlSafe(zhTitleStatus.label)}">●</span>`
-      : '';
     const subSyncing = isDraining || partialStale;
     const subInlineHtml =
       childCount > 0 ? `<span class="ag-sep">·</span><span class="ag-sub-badge">+${childCount} sub</span>` : '';
@@ -2219,8 +1766,7 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
       `<span>Ctx ${fmtTok(last.ctx)}/${limitStr} <span class="${ctxClass}">(${ctxPct}%)</span></span>`,
       `<span class="ag-sep">·</span>`,
       `<span>Out ${fmtTok(last.outTok)}</span>`,
-      subInlineHtml,
-      zhWarnInlineHtml
+      subInlineHtml
     ].join('');
 
     const turnRowHtml =
@@ -2239,13 +1785,6 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
       childCount > 0
         ? `<div class="ag-tt-row"><span class="ag-tt-lbl">累计输出量</span><span class="ag-tt-val">总计 ${fmtTok(combinedOut)} (主 ${fmtTok(totalOut)} + 子 ${fmtTok(childOut)})</span></div>`
         : `<div class="ag-tt-row"><span class="ag-tt-lbl">累计输出量</span><span class="ag-tt-val">总计 ${fmtTok(totalOut)} (思考链 ${fmtTok(totalThink)} + 正文/工具 ${fmtTok(totalResp)})</span></div>`;
-    const zhCmdEsc = zhWarnActive && zhTitleStatus.cmd ? escapeHtmlSafe(zhTitleStatus.cmd) : '';
-    const zhCmdRowHtml = zhCmdEsc
-      ? `<div class="ag-tt-warn-cmd-row"><code class="ag-tt-warn-cmd">${zhCmdEsc}</code><button type="button" class="ag-tt-copy-btn" data-ag-copy-cmd="${zhCmdEsc}">复制命令</button></div>`
-      : '';
-    const zhWarnRowHtml = zhWarnActive
-      ? `<div class="ag-tt-warn"><div class="ag-tt-warn-hdr"><span class="ag-tt-warn-lbl">⚠ ${escapeHtmlSafe(zhTitleStatus.label)}</span></div><span class="ag-tt-warn-val">${escapeHtmlSafe(zhTitleStatus.detail)}</span>${zhCmdRowHtml}</div>`
-      : '';
 
     const tooltipRows = [
       `<div class="ag-tt-hdr">本轮最新调用 (Gen #${last.idx + 1})</div>`,
@@ -2258,25 +1797,19 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
       `<div class="ag-tt-row"><span class="ag-tt-lbl">压缩水位线</span><span class="ag-tt-val">${fmtTok(last.ctx)} / ${limitStr} (${ctxPct}%) · 距压缩余 ${fmtTok(remainCtx)}</span></div>`,
       `<div class="ag-tt-row"><span class="ag-tt-lbl">累计输入量</span><span class="ag-tt-val">新增 ${fmtTok(totalIn)} + 缓存读取 ${fmtTok(totalCache)} (命中率 ${sessionCacheRate}%)</span></div>`,
       subRowHtml,
-      outputRowHtml,
-      zhWarnRowHtml
+      outputRowHtml
     ];
     const tooltipHtml = tooltipRows.join('');
 
-    const uncBackoffActive = Boolean(
-      childSnap?.uncBackoffActive || (uncParent && Date.now() < wslUncBackoffUntil)
-    );
     const payload = {
       cascadeId,
       hasData: true,
       sig: compositeSig,
       isDraining,
       partialStale,
-      uncBackoffActive,
       inlineHtml,
       tooltipHtml
     };
-    setBoundedMap(lastBestEffortPayloadCache, dbPath, payload, 64);
     if (!isDraining && !partialStale) {
       setMetricsCache(dbPath, { sig: compositeSig, payload });
     }
@@ -2732,7 +2265,7 @@ function attachTarget(target, endpoint) {
             perCascadeState.set(cid, cState);
           }
 
-          // 先在 Node 本地通过 statSync 检查 .db/.db-wal 与子 Agent 复合签名（兼容 Windows WSL 按需懒探测），未变化则 0 WebSocket 通信直接跳过
+          // 先在 Node 本地通过 statSync 检查 .db/.db-wal 与子 Agent 复合签名，未变化则 0 WebSocket 通信直接跳过
           const dbState = getDbState(cid, currentEndpoint);
           const conversationsDir = dbState?.dbPath ? path.dirname(dbState.dbPath) : '';
           const childSnap = conversationsDir
@@ -2740,14 +2273,7 @@ function attachTarget(target, endpoint) {
             : null;
           const sig = childSnap?.sig || dbState?.sig || 'empty';
           const sessionKey = `${cid}@${sig}|${metricsConfigEpoch}`;
-          const uncCoolingDown = Boolean(
-            (dbState?.uncDeferred || childSnap?.uncBackoffActive) && Date.now() < wslUncBackoffUntil
-          );
-          if (
-            !force &&
-            ((!childSnap?.isDraining && !childSnap?.partialStale && sessionKey === cState.lastPushedHash) ||
-              (uncCoolingDown && cState.lastRenderedSig !== ''))
-          ) {
+          if (!force && !childSnap?.isDraining && sessionKey === cState.lastPushedHash) {
             continue;
           }
 
@@ -3274,178 +2800,10 @@ function attachTarget(target, endpoint) {
 
 let isSyncing = false;
 let syncTickCount = 0;
-let lastZhPatchSig = '';
-let isZhPatchRunning = false;
-let isZhStatusProbing = false;
-let hasProbedZhLiveOnce = false;
-let cachedWorkingPython = undefined;
-let zhPatchFailedSig = '';
-let zhPatchFailCount = 0;
-
-function probeZhTitleLiveState(pyBin, scriptPath) {
-  if (SAFE_MODE || process.platform !== 'darwin' || isZhStatusProbing || !pyBin || !scriptPath) return;
-  isZhStatusProbing = true;
-  const child = execFile(pyBin, [scriptPath, 'status', '--json'], { timeout: 8000 }, (err, stdout) => {
-    isZhStatusProbing = false;
-    hasProbedZhLiveOnce = true;
-    if (err) return;
-    try {
-      const records = JSON.parse(String(stdout || '').trim());
-      if (!Array.isArray(records) || records.length === 0) return;
-      const activeRecs = records.filter((r) => r && !r.disabled);
-      if (activeRecs.length === 0) {
-        setZhTitleStatus('ok');
-        return;
-      }
-      if (activeRecs.some((r) => r.diskState === 'PATCHED' && r.liveState === 'STALE_RUNNING_INODE')) {
-        setZhTitleStatus(
-          'stale_inode',
-          '中文标题补丁待重载生效',
-          '磁盘补丁已自动修补完毕，但运行中服务仍挂载更新前旧镜像。可在对话空闲时重启客户端，或在终端执行下方命令热重载（热重载会刷新窗口）：',
-          'python3 ~/.gemini/antigravity/scripts/antigravity-zh-title-patch.py reload-hub'
-        );
-        return;
-      }
-      if (activeRecs.every((r) => r.diskState === 'PATCHED')) {
-        setZhTitleStatus('ok');
-      }
-    } catch {
-      // 旧版脚本尚不支持 status --json 时静默兼容降级
-    }
-  });
-  try {
-    child.stdin?.end();
-  } catch {}
-}
-
-function resolveWorkingPython3() {
-  if (cachedWorkingPython !== undefined) return cachedWorkingPython;
-  const candidates = [
-    '/opt/homebrew/bin/python3',
-    '/Library/Frameworks/Python.framework/Versions/Current/bin/python3',
-    '/usr/local/bin/python3',
-    'python3'
-  ];
-  for (const bin of candidates) {
-    if (bin.startsWith('/') && !fs.existsSync(bin)) continue;
-    try {
-      const res = spawnSync(bin, ['-c', 'import sys; sys.exit(0)'], {
-        timeout: 3000,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        windowsHide: true
-      });
-      if (res.status === 0) {
-        cachedWorkingPython = bin;
-        return bin;
-      }
-    } catch {}
-  }
-  cachedWorkingPython = null;
-  return null;
-}
-
-function ensureZhTitlePatchIfPresent() {
-  if (SAFE_MODE || process.platform !== 'darwin' || isZhPatchRunning) return;
-  const scriptPath = path.join(os.homedir(), '.gemini/antigravity/scripts/antigravity-zh-title-patch.py');
-  if (!fs.existsSync(scriptPath)) return;
-  const disabledMarkerPath = path.join(os.homedir(), '.gemini/antigravity/scripts/backups/zh-title/DISABLED');
-  const lsBins = [
-    '/Applications/Antigravity.app/Contents/Resources/bin/language_server',
-    '/Applications/Antigravity - Insiders.app/Contents/Resources/bin/language_server'
-  ];
-  const computeZhSig = () => {
-    const scriptSig = getFileMtimeSig(scriptPath);
-    const disabledSig = getFileMtimeSig(disabledMarkerPath);
-    const binSig = lsBins
-      .map((p) => {
-        const st = fs.statSync(p, { throwIfNoEntry: false });
-        return st ? `${p}:${st.mtimeMs}:${st.size}` : '';
-      })
-      .join('|');
-    return binSig ? `script:${scriptSig}|disabled:${disabledSig}|${binSig}` : '';
-  };
-  const sig = computeZhSig();
-  if (!sig) return;
-  if (fs.existsSync(disabledMarkerPath)) {
-    lastZhPatchSig = sig;
-    setZhTitleStatus('ok');
-    return;
-  }
-  if (sig === lastZhPatchSig) {
-    if (!hasProbedZhLiveOnce || zhTitleStatus.state === 'stale_inode') {
-      const pyProbe = resolveWorkingPython3();
-      if (pyProbe) probeZhTitleLiveState(pyProbe, scriptPath);
-    }
-    return;
-  }
-  if (sig === zhPatchFailedSig && zhPatchFailCount >= 3) return;
-
-  const pyBin = resolveWorkingPython3();
-  if (!pyBin) {
-    zhPatchFailedSig = sig;
-    zhPatchFailCount = 3;
-    console.error('[Daemon] No working python3 interpreter found (Xcode license or PATH issue); skipping zh-title auto-patch.');
-    return;
-  }
-
-  isZhPatchRunning = true;
-  const child = execFile(pyBin, [scriptPath, 'patch', '--auto'], { timeout: 25000 }, (err, stdout, stderr) => {
-    isZhPatchRunning = false;
-    const outStr = String(stdout || '').trim();
-    const errStr = String(stderr || '').trim();
-    if (err) {
-      if (
-        err.code === 3 ||
-        outStr.includes('[PERM_DENIED]') ||
-        /Operation not permitted|PermissionError/i.test(errStr) ||
-        /Operation not permitted|PermissionError/i.test(outStr)
-      ) {
-        zhPatchFailedSig = sig;
-        zhPatchFailCount = 3;
-        setZhTitleStatus(
-          'tcc_blocked',
-          '中文标题补丁待终端授权',
-          '客户端更新后，macOS「App 管理」权限拦截了后台自动修补。请在已授权该权限的终端执行下方命令（可在「系统设置 → 隐私与安全性 → App 管理」为终端开启权限）：',
-          'python3 ~/.gemini/antigravity/scripts/antigravity-zh-title-patch.py patch --reload-hub'
-        );
-        console.log(
-          '[Daemon] zh-title auto-patch skipped (macOS App Management TCC blocks background LaunchAgent write; run `python3 ~/.gemini/antigravity/scripts/antigravity-zh-title-patch.py patch --reload-hub` in an authorized terminal).'
-        );
-        return;
-      }
-      if (zhPatchFailedSig !== sig) {
-        zhPatchFailedSig = sig;
-        zhPatchFailCount = 1;
-      } else {
-        zhPatchFailCount += 1;
-      }
-      console.error(
-        `[Daemon] zh-title auto-patch failed (${zhPatchFailCount}/3): ${err.message} ${errStr}`
-      );
-      return;
-    }
-    zhPatchFailedSig = '';
-    zhPatchFailCount = 0;
-    lastZhPatchSig = computeZhSig();
-    if (outStr.includes('中文标题补丁写入磁盘成功') || outStr.includes('中文标题补丁注入成功')) {
-      console.log('[Daemon] Auto-applied zh-title patch:', outStr.split('\n')[0]);
-    } else if (outStr.includes('DISABLED')) {
-      console.log('[Daemon] zh-title auto-patch skipped (DISABLED marker present).');
-      setZhTitleStatus('ok');
-      return;
-    }
-    probeZhTitleLiveState(pyBin, scriptPath);
-  });
-  try {
-    child.stdin?.end();
-  } catch {}
-}
 
 const fallbackBackoffUntil = new Map();
 const CDP_RELAUNCH_GUARD_FILE = path.join(os.tmpdir(), 'ag-cdp-relaunch-guard.json');
 const ignoredUnflaggedHostPids = new Set();
-const exemptedHostPidByChannel = new Map();
-const knownNonHostPids = new Set();
 const NON_HOST_CMD_RE = /--type=|--crashpad|--utility-sub-type=|--import=|sidecar_sdk|--ms-enable-electron-run-as-node/i;
 let isCdpRelaunching = false;
 
@@ -3484,227 +2842,57 @@ function pruneIgnoredHostPids() {
       ignoredUnflaggedHostPids.delete(pid);
     }
   }
-  for (const [ch, pid] of Array.from(exemptedHostPidByChannel.entries())) {
-    if (!isPidAlive(pid)) {
-      exemptedHostPidByChannel.delete(ch);
-    }
-  }
-  if (knownNonHostPids.size > 0) {
-    for (const pid of Array.from(knownNonHostPids)) {
-      if (!isPidAlive(pid)) {
-        knownNonHostPids.delete(pid);
-      }
-    }
-  }
 }
 
-function probeRunningHostProcesses(channelMode = 'auto', endpoints = []) {
+function probeRunningHostProcesses(channelMode = 'auto') {
   const allowStable = channelMode !== 'insiders';
   const allowInsiders = channelMode !== 'stable';
-
-  if (process.platform === 'darwin') {
-    const res = spawnSync('ps', ['-axo', 'pid=,etime=,command='], {
-      encoding: 'utf8',
-      timeout: 2500
+  const res = spawnSync('ps', ['-axo', 'pid=,etime=,command='], {
+    encoding: 'utf8',
+    timeout: 2500
+  });
+  if (res.status !== 0 || !res.stdout) return [];
+  const found = [];
+  for (const line of String(res.stdout).split(/\r?\n/)) {
+    const m = line.trim().match(/^(\d+)\s+(\S+)\s+(.+)$/);
+    if (!m) continue;
+    const pid = parseInt(m[1], 10);
+    const etimeRaw = m[2];
+    const cmd = m[3];
+    if (!pid || NON_HOST_CMD_RE.test(cmd) || /Helper(?:\s|\.|\/)/i.test(cmd)) continue;
+    const appMatch = cmd.match(/^(\S.*?\/Antigravity(?:\s-\sInsiders)?\.app)\/Contents\/MacOS\/(Antigravity(?:\s-\sInsiders)?)(?:\s|$)/);
+    if (!appMatch) continue;
+    const appPath = appMatch[1];
+    const binName = appMatch[2];
+    const ch = /Insiders/i.test(binName) ? 'insiders' : 'stable';
+    if ((ch === 'stable' && !allowStable) || (ch === 'insiders' && !allowInsiders)) continue;
+    found.push({
+      pid,
+      channel: ch,
+      elapsedSec: parsePosixEtimeSeconds(etimeRaw),
+      appPath,
+      cmd,
+      hasCdpFlag: /--remote-debugging-port(?:=|\s|$)/.test(cmd),
+      hasUpdatedFlag: /--updated(?:\s|$)/.test(cmd)
     });
-    if (res.status !== 0 || !res.stdout) return [];
-    const found = [];
-    for (const line of String(res.stdout).split(/\r?\n/)) {
-      const m = line.trim().match(/^(\d+)\s+(\S+)\s+(.+)$/);
-      if (!m) continue;
-      const pid = parseInt(m[1], 10);
-      const etimeRaw = m[2];
-      const cmd = m[3];
-      if (!pid || NON_HOST_CMD_RE.test(cmd) || /Helper(?:\s|\.|\/)/i.test(cmd)) continue;
-      const appMatch = cmd.match(/^(\S.*?\/Antigravity(?:\s-\sInsiders)?\.app)\/Contents\/MacOS\/(Antigravity(?:\s-\sInsiders)?)(?:\s|$)/);
-      if (!appMatch) continue;
-      const appPath = appMatch[1];
-      const binName = appMatch[2];
-      const ch = /Insiders/i.test(binName) ? 'insiders' : 'stable';
-      if ((ch === 'stable' && !allowStable) || (ch === 'insiders' && !allowInsiders)) continue;
-      found.push({
-        pid,
-        channel: ch,
-        elapsedSec: parsePosixEtimeSeconds(etimeRaw),
-        appPath,
-        exePath: `${appPath}/Contents/MacOS/${binName}`,
-        cmd,
-        hasCdpFlag: /--remote-debugging-port(?:=|\s|$)/.test(cmd),
-        hasUpdatedFlag: /--updated(?:\s|$)/.test(cmd)
-      });
-    }
-    return found;
   }
-
-  if (process.platform === 'win32') {
-    // 双层零开销预筛：
-    // 1) 若某通道已存在活跃 DevToolsActivePort，或该通道已豁免的无参宿主主进程 PID 仍存活（SingletonLock 保证单通道唯一主进程），直接 O(1) 内存级跳过（0 tasklist + 0 PowerShell）；
-    // 2) 仅对尚未锁定的通道调用原生 C++ tasklist 检查是否存在未见过的 PID，并对渲染/GPU/Utility/sidecar_sdk 同名子进程记入 knownNonHostPids 防止重复唤醒 PowerShell。
-    const imageSpecs = [];
-    const stableEp = endpoints.find((ep) => ep.channel === 'stable');
-    const insidersEp = endpoints.find((ep) => ep.channel === 'insiders');
-    const stableExemptPid = exemptedHostPidByChannel.get('stable');
-    const insidersExemptPid = exemptedHostPidByChannel.get('insiders');
-    if (allowStable && !(stableEp && readPort(stableEp.portFile)) && !(stableExemptPid && isPidAlive(stableExemptPid))) {
-      imageSpecs.push({ channel: 'stable', img: 'Antigravity.exe' });
-    }
-    if (
-      allowInsiders &&
-      insidersEp &&
-      insidersEp.channelInstalled &&
-      !readPort(insidersEp.portFile) &&
-      !(insidersExemptPid && isPidAlive(insidersExemptPid))
-    ) {
-      imageSpecs.push({ channel: 'insiders', img: 'Antigravity - Insiders.exe' });
-    }
-    if (imageSpecs.length === 0) return [];
-
-    const candidatePids = [];
-    for (const { img } of imageSpecs) {
-      const tl = spawnSync('tasklist', ['/FI', `IMAGENAME eq ${img}`, '/FO', 'CSV', '/NH'], {
-        windowsHide: true,
-        encoding: 'utf8',
-        timeout: 2500
-      });
-      if (tl.status === 0 && tl.stdout) {
-        for (const row of String(tl.stdout).split(/\r?\n/)) {
-          const cm = row.trim().match(/^"([^"]+)","(\d+)"/);
-          if (cm && cm[1].toLowerCase() === img.toLowerCase()) {
-            const p = parseInt(cm[2], 10);
-            if (p > 0 && !ignoredUnflaggedHostPids.has(p) && !knownNonHostPids.has(p)) {
-              candidatePids.push(p);
-            }
-          }
-        }
-      }
-    }
-    if (candidatePids.length === 0) return [];
-
-    const psCmd = [
-      `[Console]::OutputEncoding = [System.Text.Encoding]::UTF8`,
-      `$ErrorActionPreference = 'SilentlyContinue'`,
-      `$now = [DateTime]::UtcNow`,
-      `$procs = Get-CimInstance Win32_Process -Filter "Name = 'Antigravity.exe' OR Name = 'Antigravity - Insiders.exe'"`,
-      `$hostOut = @(); $nonHostPids = @()`,
-      `foreach ($p in $procs) {`,
-      `  $pidVal = [int]$p.ProcessId`,
-      `  $cmd = [string]$p.CommandLine`,
-      `  if ($cmd -match '--type=|--crashpad|--utility-sub-type=|--import=|sidecar_sdk|--ms-enable-electron-run-as-node') { $nonHostPids += $pidVal; continue }`,
-      `  $age = if ($p.CreationDate) { [Math]::Max(0, [int][Math]::Round(($now - ([DateTime]$p.CreationDate).ToUniversalTime()).TotalSeconds)) } else { 999999 }`,
-      `  $hostOut += @{ pid = $pidVal; name = [string]$p.Name; exe = [string]$p.ExecutablePath; cmd = $cmd; elapsedSec = $age }`,
-      `}`,
-      `@{ hosts = $hostOut; nonHostPids = $nonHostPids } | ConvertTo-Json -Compress -Depth 4`
-    ].join('\n');
-    const cim = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', psCmd], {
-      windowsHide: true,
-      encoding: 'utf8',
-      timeout: 5000
-    });
-    if (cim.status !== 0 || !cim.stdout || !cim.stdout.trim()) return [];
-    let parsedHosts = [];
-    try {
-      const payload = JSON.parse(cim.stdout.trim());
-      const nonHosts = Array.isArray(payload?.nonHostPids)
-        ? payload.nonHostPids
-        : payload?.nonHostPids
-        ? [payload.nonHostPids]
-        : [];
-      for (const np of nonHosts) {
-        const n = Number(np);
-        if (n > 0) knownNonHostPids.add(n);
-      }
-      const rawHosts = payload?.hosts;
-      parsedHosts = Array.isArray(rawHosts) ? rawHosts : rawHosts ? [rawHosts] : [];
-    } catch {
-      return [];
-    }
-    return parsedHosts
-      .map((item) => {
-        const ch = /insiders/i.test(item.name || item.exe || '') ? 'insiders' : 'stable';
-        const cmd = String(item.cmd || '');
-        const hasCdpFlag = /--remote-debugging-port(?:=|\s|$)/i.test(cmd);
-        const pidNum = Number(item.pid) || 0;
-        if (hasCdpFlag && pidNum > 0) {
-          knownNonHostPids.add(pidNum);
-        }
-        return {
-          pid: pidNum,
-          channel: ch,
-          elapsedSec: Number.isFinite(Number(item.elapsedSec)) ? Number(item.elapsedSec) : Infinity,
-          appPath: '',
-          exePath: String(item.exe || ''),
-          cmd,
-          hasCdpFlag,
-          hasUpdatedFlag: /--updated(?:\s|$)/i.test(cmd)
-        };
-      })
-      .filter(
-        (p) =>
-          p.pid > 0 &&
-          p.exePath &&
-          ((p.channel === 'stable' && allowStable) || (p.channel === 'insiders' && allowInsiders))
-      );
-  }
-
-  if (process.platform === 'linux') {
-    const res = spawnSync('ps', ['-axo', 'pid=,etime=,command='], {
-      encoding: 'utf8',
-      timeout: 2500
-    });
-    if (res.status !== 0 || !res.stdout) return [];
-    const found = [];
-    for (const line of String(res.stdout).split(/\r?\n/)) {
-      const m = line.trim().match(/^(\d+)\s+(\S+)\s+(.+)$/);
-      if (!m) continue;
-      const pid = parseInt(m[1], 10);
-      const etimeRaw = m[2];
-      const cmd = m[3];
-      if (!pid || NON_HOST_CMD_RE.test(cmd) || /daemon\.mjs|install\.mjs/.test(cmd)) continue;
-      const binMatch = cmd.match(/^(\/\S*\/antigravity(?:-insiders)?)(?:\s|$)/i);
-      if (!binMatch) continue;
-      const exePath = binMatch[1];
-      const ch = /insiders/i.test(exePath) ? 'insiders' : 'stable';
-      if ((ch === 'stable' && !allowStable) || (ch === 'insiders' && !allowInsiders)) continue;
-      found.push({
-        pid,
-        channel: ch,
-        elapsedSec: parsePosixEtimeSeconds(etimeRaw),
-        appPath: '',
-        exePath,
-        cmd,
-        hasCdpFlag: /--remote-debugging-port(?:=|\s|$)/.test(cmd),
-        hasUpdatedFlag: /--updated(?:\s|$)/.test(cmd)
-      });
-    }
-    return found;
-  }
-
-  return [];
+  return found;
 }
 
 function hasActiveConversationWalWrite(endpoint, windowSec = 15) {
-  if (!endpoint) return false;
-  const dirs = [endpoint.conversationsDir].filter(Boolean);
-  if (process.platform === 'win32') {
-    const cachedWsl = wslDirsCache.get(path.join(path.dirname(endpoint.portFile || ''), 'wsl_state.json'));
-    if (cachedWsl && Array.isArray(cachedWsl.dirs)) {
-      dirs.push(...cachedWsl.dirs);
-    }
-  }
+  if (!endpoint || !endpoint.conversationsDir) return false;
   const now = Date.now();
   const windowMs = windowSec * 1000;
-  for (const dir of dirs) {
-    try {
-      if (!fs.existsSync(dir)) continue;
-      for (const name of fs.readdirSync(dir)) {
-        if (!name.endsWith('.db-wal')) continue;
-        const st = fs.statSync(path.join(dir, name), { throwIfNoEntry: false });
-        if (st && st.size > 4096 && now - st.mtimeMs < windowMs) {
-          return true;
-        }
+  try {
+    if (!fs.existsSync(endpoint.conversationsDir)) return false;
+    for (const name of fs.readdirSync(endpoint.conversationsDir)) {
+      if (!name.endsWith('.db-wal')) continue;
+      const st = fs.statSync(path.join(endpoint.conversationsDir, name), { throwIfNoEntry: false });
+      if (st && st.size > 4096 && now - st.mtimeMs < windowMs) {
+        return true;
       }
-    } catch {}
-  }
+    }
+  } catch {}
   return false;
 }
 
@@ -3720,7 +2908,7 @@ function maybeAutoRelaunchColdStartWithoutCdp() {
   }
 
   pruneIgnoredHostPids();
-  const hostProcs = probeRunningHostProcesses(activeConfig.channel, activeConfig.endpoints);
+  const hostProcs = probeRunningHostProcesses(activeConfig.channel);
   if (hostProcs.length === 0) return false;
 
   for (const proc of hostProcs) {
@@ -3733,7 +2921,6 @@ function maybeAutoRelaunchColdStartWithoutCdp() {
     const maxWindowSec = proc.hasUpdatedFlag ? 25 : 12;
     if (proc.elapsedSec > maxWindowSec) {
       ignoredUnflaggedHostPids.add(proc.pid);
-      exemptedHostPidByChannel.set(proc.channel, proc.pid);
       const msg = `[Daemon] Detected running Antigravity (${proc.channel}, PID ${proc.pid}, uptime ${proc.elapsedSec}s) started without --remote-debugging-port; skipping auto-relaunch to protect active session. Run \`node ${path.join(ROOT_DIR, 'install.mjs')} relaunch\` when idle.`;
       console.log(msg);
       logDaemonEvent(msg);
@@ -3742,7 +2929,6 @@ function maybeAutoRelaunchColdStartWithoutCdp() {
 
     if (hasActiveConversationWalWrite(ep, 15)) {
       ignoredUnflaggedHostPids.add(proc.pid);
-      exemptedHostPidByChannel.set(proc.channel, proc.pid);
       const msg = `[Daemon] Skipped cold-start auto-relaunch for PID ${proc.pid}: active conversation WAL write detected within 15s.`;
       console.log(msg);
       logDaemonEvent(msg);
@@ -3754,7 +2940,6 @@ function maybeAutoRelaunchColdStartWithoutCdp() {
     const lastAt = Number(guard.lastRelaunchAtMs) || 0;
     if (handledPids.includes(proc.pid) || Date.now() - lastAt < 60000) {
       ignoredUnflaggedHostPids.add(proc.pid);
-      exemptedHostPidByChannel.set(proc.channel, proc.pid);
       logDaemonEvent(
         `Skipped cold-start auto-relaunch for PID ${proc.pid}: guard cooldown active (lastRelaunchDeltaMs=${Date.now() - lastAt}).`
       );
@@ -3772,31 +2957,19 @@ function maybeAutoRelaunchColdStartWithoutCdp() {
         handledPids: Array.from(new Set([...handledPids.slice(-15), proc.pid]))
       };
       try {
-        fs.writeFileSync(CDP_RELAUNCH_GUARD_FILE, `${JSON.stringify(nextGuard, null, 2)}\n`, 'utf8');
+        writePrivateFileSync(CDP_RELAUNCH_GUARD_FILE, `${JSON.stringify(nextGuard, null, 2)}\n`, 'utf8', 0o600);
       } catch {}
 
       // 终止刚冷启动的无标记主进程，并严格等待其优雅刷盘释放 SingletonLock 后再拉起带 --remote-debugging-port=0 的新进程
-      if (process.platform === 'win32') {
-        const stopPs = [
-          `$gp = Get-Process -Id ${proc.pid} -ErrorAction SilentlyContinue`,
-          `if ($gp) { [void]$gp.CloseMainWindow(); if (-not $gp.WaitForExit(1800)) { Stop-Process -Id ${proc.pid} -Force -ErrorAction SilentlyContinue } }`
-        ].join('; ');
-        spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', stopPs], {
-          windowsHide: true,
-          stdio: 'ignore',
-          timeout: 4500
-        });
-      } else {
-        try {
-          process.kill(proc.pid, 'SIGTERM');
-        } catch {}
-      }
+      try {
+        process.kill(proc.pid, 'SIGTERM');
+      } catch {}
 
       for (let i = 0; i < 55; i++) {
         if (!isPidAlive(proc.pid)) break;
         sleepSync(80);
       }
-      if (isPidAlive(proc.pid) && process.platform !== 'win32') {
+      if (isPidAlive(proc.pid)) {
         try {
           process.kill(proc.pid, 'SIGKILL');
         } catch {}
@@ -3807,18 +2980,11 @@ function maybeAutoRelaunchColdStartWithoutCdp() {
       // 预留极短排空窗口确保 Electron SingletonLock 文件句柄完全释放
       sleepSync(180);
 
-      if (process.platform === 'darwin' && proc.appPath) {
+      if (proc.appPath) {
         spawnSync('/usr/bin/open', ['-a', proc.appPath, '--args', '--remote-debugging-port=0'], {
           stdio: 'ignore',
           timeout: 5000
         });
-      } else if (proc.exePath) {
-        const child = spawn(proc.exePath, ['--remote-debugging-port=0'], {
-          detached: true,
-          stdio: 'ignore',
-          windowsHide: false
-        });
-        child.unref();
       }
 
       const okMsg = `[Daemon] Cold-start auto-relaunched Antigravity (${proc.channel}, old PID ${proc.pid}, age ${proc.elapsedSec}s) with --remote-debugging-port=0.`;
@@ -3834,22 +3000,32 @@ function maybeAutoRelaunchColdStartWithoutCdp() {
   return false;
 }
 
-function trimPosixDaemonLogsIfNeeded() {
-  if (process.platform === 'win32') return;
+function trimDaemonLogsIfNeeded() {
   const maxBytes = 262144; // 256 KB
   const keepBytes = 65536; // 64 KB
-  for (const logPath of ['/tmp/antigravity-font-daemon.log', '/tmp/antigravity-font-daemon.err']) {
+  const logPaths = [
+    path.join(ROOT_DIR, 'logs', 'daemon.log'),
+    path.join(ROOT_DIR, 'logs', 'daemon.err'),
+    '/tmp/antigravity-font-daemon.log',
+    '/tmp/antigravity-font-daemon.err'
+  ];
+  for (const logPath of logPaths) {
     try {
       const st = fs.statSync(logPath, { throwIfNoEntry: false });
-      if (!st || st.size <= maxBytes) continue;
-      const buf = fs.readFileSync(logPath);
-      let sliceStart = Math.max(0, buf.length - keepBytes);
-      const nlIdx = buf.indexOf(10, sliceStart);
-      if (nlIdx !== -1 && nlIdx + 1 < buf.length) {
-        sliceStart = nlIdx + 1;
+      if (!st) continue;
+      if (st.size > maxBytes) {
+        const buf = fs.readFileSync(logPath);
+        let sliceStart = Math.max(0, buf.length - keepBytes);
+        const nlIdx = buf.indexOf(10, sliceStart);
+        if (nlIdx !== -1 && nlIdx + 1 < buf.length) {
+          sliceStart = nlIdx + 1;
+        }
+        // 原位截断覆写以保留相同 inode，兼容 LaunchAgent O_APPEND 重定向句柄
+        fs.writeFileSync(logPath, buf.subarray(sliceStart));
       }
-      // 原位截断覆写以保留相同 inode，兼容 LaunchAgent O_APPEND 重定向句柄
-      fs.writeFileSync(logPath, buf.subarray(sliceStart));
+      try {
+        fs.chmodSync(logPath, 0o600);
+      } catch {}
     } catch {}
   }
 }
@@ -3860,9 +3036,11 @@ async function sync() {
   isSyncing = true;
   syncTickCount = (syncTickCount + 1) % 6000;
   try {
-    if (syncTickCount % 12 === 1) ensureZhTitlePatchIfPresent();
-    if (syncTickCount % 24 === 1) trimPosixDaemonLogsIfNeeded();
+    if (syncTickCount % 24 === 1) trimDaemonLogsIfNeeded();
     const bundleChanged = rebuildBundleIfNeeded();
+    if (!coreIntegrityOk || !cachedInjectScript) {
+      return;
+    }
     if (!activeConfig.enabled) {
       targetThemeModes.clear();
       targetDarkPresets.clear();
