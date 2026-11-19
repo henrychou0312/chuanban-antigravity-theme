@@ -91,9 +91,9 @@ body[data-agy-font],
 body[data-agy-font="google-sans"],
 body[data-agy-font] :where(.font-sans),
 .pdf-sdk-root {
-  --font-sans: 'Google Sans Flex', 'Google Sans', 'AgSarasaUI', 'Sarasa UI SC', '更纱黑体 UI SC', 'PingFang SC', 'Hiragino Sans GB', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif !important;
+  --font-sans: 'Google Sans Flex', 'Google Sans', 'AgSarasaUI', 'Sarasa UI SC', '更纱黑体 UI SC', 'PingFang SC', 'Hiragino Sans GB', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif !important;
   --vscode-font-family: var(--font-sans) !important;
-  --editor-font-family: 'Anthropic Mono', 'Anthropic Mono Web', 'anthropic-mono', 'Sarasa Mono Slab SC', '等距更纱黑体 Slab SC', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace !important;
+  --editor-font-family: 'Anthropic Mono', 'Anthropic Mono Web', 'anthropic-mono', 'Sarasa Mono Slab SC', '等距更纱黑体 Slab SC', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, monospace !important;
   --font-mono: var(--editor-font-family) !important;
   --default-font-family: var(--font-sans) !important;
   --default-mono-font-family: var(--font-mono) !important;
@@ -105,7 +105,7 @@ body[data-agy-font] :where(.font-sans),
 
 body[data-agy-font="inter"],
 body[data-agy-font="inter"] :where(.font-sans) {
-  --font-sans: 'Inter', 'AgSarasaUI', 'Sarasa UI SC', '更纱黑体 UI SC', 'PingFang SC', 'Hiragino Sans GB', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Microsoft YaHei UI', 'Microsoft YaHei', sans-serif !important;
+  --font-sans: 'Inter', 'AgSarasaUI', 'Sarasa UI SC', '更纱黑体 UI SC', 'PingFang SC', 'Hiragino Sans GB', system-ui, -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif !important;
   --vscode-font-family: var(--font-sans) !important;
 }
 
@@ -125,8 +125,8 @@ body[data-agy-font="inter"] :where(.font-sans) {
   --ag-ui-w-sel: 520;
 }
 
-/* macOS 专属全域活字润墨与 UI 字重微平衡（正文与 Markdown 保持饱满墨感；UI 标准字重极轻微收细 -10~-12、UI 加粗字重适度收细抵消墨感发粗；Windows 保持 100% 零改动） */
-html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]):not(:has(> body.dark)):not(:has(> body.theme-dark)) {
+/* macOS 全域活字润墨与 UI 字重微平衡（正文与 Markdown 保持饱满墨感；UI 标准字重极轻微收细 -10~-12、UI 加粗字重适度收细抵消墨感发粗） */
+html:not([data-ag-theme-mode="dark"]):not(:has(> body.dark)):not(:has(> body.theme-dark)) {
   --ag-ink-shadow-xs: 0 0 0.38px color-mix(in srgb, currentColor 48%, transparent);
   --ag-ink-shadow-sm: 0 0 0.44px color-mix(in srgb, currentColor 54%, transparent);
   --ag-ink-shadow-md: 0 0 0.48px color-mix(in srgb, currentColor 58%, transparent);
@@ -139,8 +139,8 @@ html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]):not(:has(> body.dark)
   --ag-ui-w-sel: 488;
 }
 
-html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark):not([data-agy-font="inter"]),
-html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark):not([data-agy-font="inter"]) :where(.font-sans:not([data-markdown-root]):not([data-markdown-root] *)) {
+html:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark):not([data-agy-font="inter"]),
+html:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark):not([data-agy-font="inter"]) :where(.font-sans:not([data-markdown-root]):not([data-markdown-root] *)) {
   --font-weight-light: 245;
   --font-weight-normal: 340;
   --font-weight-medium: 430;
@@ -149,17 +149,9 @@ html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.
   --agy-gsf-bold-wght: 455;
 }
 
-html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is(b, strong, .font-semibold, .font-bold, .swarm-title, .o2 .o2-h):not([data-markdown-root] *):not([data-testid="user-message-content"] *):not(.agy-user-bubble *):not(.prose *):not(.markdown *):not(article *):not(pre *):not(code *) {
+html:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is(b, strong, .font-semibold, .font-bold, .swarm-title, .o2 .o2-h):not([data-markdown-root] *):not([data-testid="user-message-content"] *):not(.agy-user-bubble *):not(.prose *):not(.markdown *):not(article *):not(pre *):not(code *) {
   --agy-gsf-bold-wght: 545;
   font-weight: 545;
-}
-
-html[data-ag-os="win32"] {
-  --ag-ink-shadow-xs: none;
-  --ag-ink-shadow-sm: none;
-  --ag-ink-shadow-md: none;
-  --ag-ink-shadow-prose: none;
-  --ag-ink-shadow-prose-bold: none;
 }
 
 /* 防脱靶加固：即使宿主因 System UI 旧存档 / settings.json font.family / hasEditor 拔掉 data-agy-font，只要未显式选 Inter，始终保底补齐官方 Google Sans Flex 字重阶梯与 wdth:92 窄轴 */
@@ -233,13 +225,13 @@ html, body, body[data-agy-font], button, select, nav, header, aside {
   -webkit-font-smoothing: antialiased;
 }
 
-/* macOS 专属 UI 全域基底润墨（覆盖顶栏面包屑、工具执行流、菜单、弹窗与标签页；严格隔离 win32） */
-html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark),
-html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is(header, nav, [role="menu"], [role="menuitem"], [role="listbox"], [role="option"], [role="dialog"], .agy-overlay, .agy-overlay-item) {
+/* macOS UI 全域基底润墨（覆盖顶栏面包屑、工具执行流、菜单、弹窗与标签页） */
+html:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark),
+html:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is(header, nav, [role="menu"], [role="menuitem"], [role="listbox"], [role="option"], [role="dialog"], .agy-overlay, .agy-overlay-item) {
   text-shadow: var(--ag-ink-shadow-xs);
 }
 
-html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is([role="dialog"] :is(h1, h2, h3, .font-medium, .font-semibold), [role="menu"] :is(h2, h3, h4, .font-medium)) {
+html:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is([role="dialog"] :is(h1, h2, h3, .font-medium, .font-semibold), [role="menu"] :is(h2, h3, h4, .font-medium)) {
   text-shadow: var(--ag-ink-shadow-sm);
 }
 
@@ -261,7 +253,7 @@ article,
   --agy-gsf-bold-wght: 600;
   --agy-gsf-fvs: normal;
   --agy-gsf-italic: italic;
-  font-family: 'Anthropic Serif', 'Anthropic Serif Web Display Light', 'Anthropic Serif Web', 'Anthropic Serif Web Text Light', 'anthropic-serif', 'Tiempos Text', 'Tiempos', 'Sarasa Mono Slab SC', '等距更纱黑体 Slab SC', 'Sarasa Gothic SC', '更纱黑体 SC', 'PingFang SC', Georgia, Cambria, 'Times New Roman', serif;
+  font-family: 'Anthropic Serif', 'Anthropic Serif Web Display Light', 'Anthropic Serif Web', 'Anthropic Serif Web Text Light', 'anthropic-serif', 'Tiempos Text', 'Tiempos', 'Sarasa Mono Slab SC', '等距更纱黑体 Slab SC', 'Sarasa Gothic SC', '更纱黑体 SC', 'PingFang SC', Georgia, 'Times New Roman', serif;
   font-weight: 400;
   font-variation-settings: normal;
   font-variant-ligatures: normal;
@@ -269,17 +261,17 @@ article,
   letter-spacing: -0.003em;
 }
 
-/* macOS 专属对话正文、用户消息气泡与 Markdown 全元素（段落/列表/引用/表格/标题/加粗/行内代码）活字墨感增浓（Windows 保持零改动） */
-html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *):not(.monaco-editor *):not(.xterm *), .prose, .markdown, article),
-html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .prose, .markdown, article) :is(p, li, blockquote, td, a, em, i, span:not(.monaco-editor *):not(.xterm *):not(pre *)) {
+/* macOS 对话正文、用户消息气泡与 Markdown 全元素（段落/列表/引用/表格/标题/加粗/行内代码）活字墨感增浓 */
+html:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *):not(.monaco-editor *):not(.xterm *), .prose, .markdown, article),
+html:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .prose, .markdown, article) :is(p, li, blockquote, td, a, em, i, span:not(.monaco-editor *):not(.xterm *):not(pre *)) {
   text-shadow: var(--ag-ink-shadow-prose);
 }
 
-html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *), .prose, .markdown, article) :is(strong, b, h1, h2, h3, h4, h5, h6, th, .font-semibold, .font-bold) {
+html:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *), .prose, .markdown, article) :is(strong, b, h1, h2, h3, h4, h5, h6, th, .font-semibold, .font-bold) {
   text-shadow: var(--ag-ink-shadow-prose-bold);
 }
 
-html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is([data-markdown-root], .select-text, .prose, .markdown) :not(pre) > code {
+html:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is([data-markdown-root], .select-text, .prose, .markdown) :not(pre) > code {
   text-shadow: var(--ag-ink-shadow-xs);
 }
 
@@ -297,31 +289,6 @@ html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.
   line-height: 1.62;
 }
 
-/* Windows DirectWrite 可变字体命名实例修正：Windows 版 AnthropicSerif TTF 仅暴露 TextLight (wght=300) 实例名，显式驱动 wght 轴还原 400 正文/斜体、500 中黑与 600 粗体/粗斜体（覆盖 p/li/blockquote/td 子节点以防被上方 font-variation-settings: normal 截断回落 300 Display Light） */
-html[data-ag-os="win32"] :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *), .prose, .markdown, article),
-html[data-ag-os="win32"] :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *), .prose, .markdown, article) :is(p, li, blockquote, td, i, em, .italic) {
-  font-variation-settings: 'wght' 400, 'opsz' 16 !important;
-}
-
-html[data-ag-os="win32"] :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *), .prose, .markdown, article) .font-medium,
-html[data-ag-os="win32"] :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *), .prose, .markdown, article) .font-medium :is(p, li, blockquote, td, i, em, .italic) {
-  font-weight: 500 !important;
-  font-variation-settings: 'wght' 500, 'opsz' 16 !important;
-}
-
-html[data-ag-os="win32"] :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *), .prose, .markdown, article) :is(strong, b, h1, h2, h3, h4, h5, h6, th, .font-semibold, .font-bold),
-html[data-ag-os="win32"] :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *), .prose, .markdown, article) :is(strong, b, h1, h2, h3, h4, h5, h6, th, .font-semibold, .font-bold) :is(p, li, blockquote, td, i, em, .italic) {
-  font-weight: 600 !important;
-  font-variation-settings: 'wght' 600, 'opsz' 16 !important;
-}
-
-html[data-ag-os="win32"] :is(code, pre, kbd, samp, .font-mono, [class*="language-"], .monaco-editor, .xterm),
-html[data-ag-os="win32"] :is(code, pre, kbd, samp, .font-mono, [class*="language-"], .monaco-editor, .xterm) *,
-html[data-ag-os="win32"] :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *), .prose, .markdown, article) :is(code, pre, kbd, samp, .font-mono, [class*="language-"]),
-html[data-ag-os="win32"] :is([data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .select-text:not([role="dialog"] *), .prose, .markdown, article) :is(code, pre, kbd, samp, .font-mono, [class*="language-"]) :is(*, strong, b, i, em, .italic, .font-medium, .font-semibold, .font-bold) {
-  font-variation-settings: normal !important;
-}
-
 html[data-ag-custom-font-size="true"] :is([data-markdown-root], [data-testid="user-message-content"], [data-testid="user-message-content"] .select-text, .agy-user-bubble, .prose, .markdown, [class*="chat-message"]) {
   font-size: var(--ag-chat-font-size) !important;
 }
@@ -332,7 +299,7 @@ code, pre, kbd, samp, .font-mono, [class*="language-"], .monaco-editor, .xterm, 
   font-variation-settings: normal !important;
 }
 
-/* 4. 输入框编辑区与 Lexical 占位符：Codex 同款等距更纱黑体 SLAB (未装更纱时中文字形优雅回退至苹方/雅黑，防 Windows 新宋体点阵退化，隔离外层 wdth:92) */
+/* 4. 输入框编辑区与 Lexical 占位符：Codex 同款等距更纱黑体 SLAB (未装更纱时中文字形优雅回退至苹方，隔离外层 wdth:92) */
 div[contenteditable="true"],
 textarea,
 div[contenteditable="true"] :is(p, span, div),
@@ -343,7 +310,7 @@ div[contenteditable="true"] :is(p, span, div),
 [data-composer],
 .ProseMirror,
 .ProseMirror :is(p, span) {
-  font-family: 'Sarasa Mono Slab SC', '等距更纱黑体 Slab SC', 'Anthropic Mono', 'Anthropic Mono Web', ui-monospace, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei UI', 'Microsoft YaHei', monospace !important;
+  font-family: 'Sarasa Mono Slab SC', '等距更纱黑体 Slab SC', 'Anthropic Mono', 'Anthropic Mono Web', ui-monospace, 'PingFang SC', 'Hiragino Sans GB', monospace !important;
   font-variation-settings: normal !important;
 }
 
@@ -354,7 +321,7 @@ div[contenteditable="true"] :is(p, span, div),
   font-variation-settings: normal !important;
 }
 
-html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is(#antigravity\.agentSidePanelInputBox [data-lexical-editor="true"], [id="antigravity.agentSidePanelInputBox"] [data-lexical-editor="true"], #antigravity\.agentSidePanelInputBox [data-lexical-editor="true"] span[data-lexical-text="true"], [id="antigravity.agentSidePanelInputBox"] [data-lexical-editor="true"] span[data-lexical-text="true"], div[contenteditable="true"], textarea, .ProseMirror) {
+html:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is(#antigravity\.agentSidePanelInputBox [data-lexical-editor="true"], [id="antigravity.agentSidePanelInputBox"] [data-lexical-editor="true"], #antigravity\.agentSidePanelInputBox [data-lexical-editor="true"] span[data-lexical-text="true"], [id="antigravity.agentSidePanelInputBox"] [data-lexical-editor="true"] span[data-lexical-text="true"], div[contenteditable="true"], textarea, .ProseMirror) {
   text-shadow: var(--ag-ink-shadow-xs);
 }
 
@@ -558,7 +525,7 @@ aside [data-testid="conversation-row-sidebar"]:not([data-selected="true"]) span 
   text-shadow: none !important;
 }
 
-html[data-ag-os="darwin"]:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is([data-testid="conversation-row-sidebar"], [data-testid="conversation-row-history"], .agy-sidebar-row):not([data-selected="true"]) :is(span, [class*="truncate"]) {
+html:not([data-ag-theme-mode="dark"]) body:not(.dark):not(.theme-dark) :is([data-testid="conversation-row-sidebar"], [data-testid="conversation-row-history"], .agy-sidebar-row):not([data-selected="true"]) :is(span, [class*="truncate"]) {
   text-shadow: var(--ag-ink-shadow-xs) !important;
 }
 
@@ -1273,13 +1240,6 @@ html[data-ag-theme-mode="dark"] #ag-theme-btn-tooltip {
   color: #9E3E22 !important;
 }
 
-:is(#antigravity\.agentSidePanelInputBox, [id="antigravity.agentSidePanelInputBox"]) :is(#ag-live-metrics-pill, .ag-live-metrics-pill) .ag-zh-warn-dot,
-:is(#ag-live-metrics-pill, .ag-live-metrics-pill) .ag-zh-warn-dot {
-  color: #B45309 !important;
-  font-size: 9px !important;
-  line-height: 1;
-}
-
 /* 黑夜模式指标胶囊配色与高可见预警色 */
 :is(html[data-ag-theme-mode="dark"] body, body.dark) :is(#ag-live-metrics-pill, .ag-live-metrics-pill) {
   color: #C8CAD4 !important;
@@ -1312,11 +1272,6 @@ html[data-ag-theme-mode="dark"] #ag-theme-btn-tooltip {
   color: #93C5FD !important;
 }
 
-:is(html[data-ag-theme-mode="dark"] body, body.dark) :is(#antigravity\.agentSidePanelInputBox, [id="antigravity.agentSidePanelInputBox"]) :is(#ag-live-metrics-pill, .ag-live-metrics-pill) .ag-zh-warn-dot,
-:is(html[data-ag-theme-mode="dark"] body, body.dark) :is(#ag-live-metrics-pill, .ag-live-metrics-pill) .ag-zh-warn-dot {
-  color: #FBBF24 !important;
-}
-
 /* 黑夜预设 2 (claude-warm) 指标胶囊暖炭与暖陶徽标配色 */
 :is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) :is(#ag-live-metrics-pill, .ag-live-metrics-pill) {
   color: #D8D4C4 !important;
@@ -1333,9 +1288,7 @@ html[data-ag-theme-mode="dark"] #ag-theme-btn-tooltip {
 }
 
 :is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) :is(#antigravity\.agentSidePanelInputBox, [id="antigravity.agentSidePanelInputBox"]) :is(#ag-live-metrics-pill, .ag-live-metrics-pill) .ag-ctx-warn,
-:is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) :is(#ag-live-metrics-pill, .ag-live-metrics-pill) .ag-ctx-warn,
-:is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) :is(#antigravity\.agentSidePanelInputBox, [id="antigravity.agentSidePanelInputBox"]) :is(#ag-live-metrics-pill, .ag-live-metrics-pill) .ag-zh-warn-dot,
-:is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) :is(#ag-live-metrics-pill, .ag-live-metrics-pill) .ag-zh-warn-dot {
+:is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) :is(#ag-live-metrics-pill, .ag-live-metrics-pill) .ag-ctx-warn {
   color: #DFAF5F !important;
 }
 
@@ -1381,10 +1334,6 @@ html[data-ag-theme-mode="dark"] #ag-theme-btn-tooltip {
   transform: translateY(0);
 }
 
-#ag-live-metrics-tooltip[data-visible="1"]:has(.ag-tt-copy-btn) {
-  pointer-events: auto !important;
-}
-
 #ag-live-metrics-tooltip .ag-tt-hdr {
   display: flex;
   justify-content: space-between;
@@ -1420,84 +1369,6 @@ html[data-ag-theme-mode="dark"] #ag-theme-btn-tooltip {
   text-align: right;
 }
 
-#ag-live-metrics-tooltip .ag-tt-warn {
-  margin-top: 8px;
-  padding: 7px 9px;
-  border-radius: 6px;
-  background-color: rgba(180, 83, 9, 0.08);
-  border: 1px solid rgba(180, 83, 9, 0.24);
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-#ag-live-metrics-tooltip .ag-tt-warn-hdr {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-}
-
-#ag-live-metrics-tooltip .ag-tt-warn-lbl {
-  color: #92400E !important;
-  font-weight: 600 !important;
-  font-size: 10.5px !important;
-}
-
-#ag-live-metrics-tooltip .ag-tt-warn-val {
-  color: #57534E !important;
-  font-family: var(--font-sans) !important;
-  font-size: 10.5px !important;
-  line-height: 1.45 !important;
-  white-space: normal !important;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-}
-
-#ag-live-metrics-tooltip .ag-tt-warn-cmd-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 6px;
-  margin-top: 2px;
-  padding: 4px 6px;
-  border-radius: 4px;
-  background-color: rgba(0, 0, 0, 0.05);
-  border: 1px solid rgba(0, 0, 0, 0.10);
-}
-
-#ag-live-metrics-tooltip .ag-tt-warn-cmd {
-  flex: 1 1 0%;
-  min-width: 0;
-  font-family: var(--font-mono) !important;
-  font-size: 10px !important;
-  line-height: 1.4 !important;
-  color: #1F1E1D !important;
-  white-space: normal !important;
-  word-break: break-all;
-  user-select: text !important;
-}
-
-#ag-live-metrics-tooltip .ag-tt-copy-btn {
-  flex-shrink: 0;
-  padding: 2px 7px !important;
-  border-radius: 4px !important;
-  font-family: var(--font-sans) !important;
-  font-size: 10px !important;
-  font-weight: 500 !important;
-  line-height: 1.4 !important;
-  cursor: pointer !important;
-  background-color: #FFFFFF !important;
-  color: #92400E !important;
-  border: 1px solid rgba(180, 83, 9, 0.32) !important;
-  transition: background-color 120ms ease, border-color 120ms ease !important;
-}
-
-#ag-live-metrics-tooltip .ag-tt-copy-btn:hover {
-  background-color: rgba(180, 83, 9, 0.12) !important;
-  border-color: rgba(180, 83, 9, 0.5) !important;
-}
-
 /* 黑夜模式悬浮指标详情卡配色 */
 :is(html[data-ag-theme-mode="dark"] body, body.dark) #ag-live-metrics-tooltip {
   background-color: var(--onyx-raised, #18181E) !important;
@@ -1519,39 +1390,6 @@ html[data-ag-theme-mode="dark"] #ag-theme-btn-tooltip {
   color: #FFFFFF !important;
 }
 
-:is(html[data-ag-theme-mode="dark"] body, body.dark) #ag-live-metrics-tooltip .ag-tt-warn {
-  background-color: rgba(251, 191, 36, 0.1);
-  border-color: rgba(251, 191, 36, 0.28);
-}
-
-:is(html[data-ag-theme-mode="dark"] body, body.dark) #ag-live-metrics-tooltip .ag-tt-warn-lbl {
-  color: #FCD34D !important;
-}
-
-:is(html[data-ag-theme-mode="dark"] body, body.dark) #ag-live-metrics-tooltip .ag-tt-warn-val {
-  color: #C8CAD4 !important;
-}
-
-:is(html[data-ag-theme-mode="dark"] body, body.dark) #ag-live-metrics-tooltip .ag-tt-warn-cmd-row {
-  background-color: rgba(0, 0, 0, 0.32);
-  border-color: rgba(255, 255, 255, 0.12);
-}
-
-:is(html[data-ag-theme-mode="dark"] body, body.dark) #ag-live-metrics-tooltip .ag-tt-warn-cmd {
-  color: #EAEBF1 !important;
-}
-
-:is(html[data-ag-theme-mode="dark"] body, body.dark) #ag-live-metrics-tooltip .ag-tt-copy-btn {
-  background-color: rgba(251, 191, 36, 0.14) !important;
-  color: #FCD34D !important;
-  border-color: rgba(251, 191, 36, 0.36) !important;
-}
-
-:is(html[data-ag-theme-mode="dark"] body, body.dark) #ag-live-metrics-tooltip .ag-tt-copy-btn:hover {
-  background-color: rgba(251, 191, 36, 0.24) !important;
-  border-color: rgba(251, 191, 36, 0.55) !important;
-}
-
 /* 黑夜预设 2 (claude-warm) 指标悬浮详情卡暖炭纸配色 */
 :is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) #ag-live-metrics-tooltip {
   background-color: var(--onyx-raised, #2B2A26) !important;
@@ -1571,37 +1409,4 @@ html[data-ag-theme-mode="dark"] #ag-theme-btn-tooltip {
 
 :is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) #ag-live-metrics-tooltip .ag-tt-val {
   color: #FCF9EF !important;
-}
-
-:is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) #ag-live-metrics-tooltip .ag-tt-warn {
-  background-color: rgba(223, 175, 95, 0.10) !important;
-  border-color: rgba(223, 175, 95, 0.28) !important;
-}
-
-:is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) #ag-live-metrics-tooltip .ag-tt-warn-lbl {
-  color: #DFAF5F !important;
-}
-
-:is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) #ag-live-metrics-tooltip .ag-tt-warn-val {
-  color: #DAD5C5 !important;
-}
-
-:is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) #ag-live-metrics-tooltip .ag-tt-warn-cmd-row {
-  background-color: rgba(20, 19, 17, 0.45) !important;
-  border-color: rgba(243, 240, 228, 0.12) !important;
-}
-
-:is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) #ag-live-metrics-tooltip .ag-tt-warn-cmd {
-  color: #F3F0E4 !important;
-}
-
-:is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) #ag-live-metrics-tooltip .ag-tt-copy-btn {
-  background-color: rgba(223, 175, 95, 0.14) !important;
-  color: #F2CA7E !important;
-  border-color: rgba(223, 175, 95, 0.36) !important;
-}
-
-:is(html[data-ag-dark-preset="claude-warm"][data-ag-theme-mode="dark"] body, html[data-ag-dark-preset="claude-warm"] body.dark) #ag-live-metrics-tooltip .ag-tt-copy-btn:hover {
-  background-color: rgba(223, 175, 95, 0.24) !important;
-  border-color: rgba(223, 175, 95, 0.55) !important;
 }

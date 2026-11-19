@@ -107,8 +107,6 @@
   }
 
   const PATCH_VERSION = boot.version || '20261119-v5.5.0';
-  const DETECTED_OS =
-    boot.platform || (/Win/i.test(navigator.platform || '') ? 'win32' : /Mac/i.test(navigator.platform || '') ? 'darwin' : 'linux');
   const ENABLED = boot.enabled !== false;
   const CSS_TEXT = boot.cssText || '';
   const CUSTOM_CSS_TEXT = boot.customCss || '';
@@ -123,8 +121,7 @@
       coldBootHealer: true,
       zoomShortcuts: true,
       cdpAutoRelaunch: true,
-      customCss: true,
-      customJs: true
+      customCss: true
     },
     boot.modules || {}
   );
@@ -145,7 +142,7 @@
     boot.selectors || {}
   );
 
-  // 执行上一轮 user/custom.js 或内部注册的生命周期清理函数（防止热重载或卸载逃逸）
+  // 执行上一轮内部注册的生命周期清理函数（防止热重载或卸载逃逸）
   if (Array.isArray(window.__ag_cleanup_fns) && window.__ag_cleanup_fns.length > 0) {
     const prevCleanups = window.__ag_cleanup_fns.splice(0, window.__ag_cleanup_fns.length);
     for (let i = 0; i < prevCleanups.length; i++) {
@@ -155,6 +152,11 @@
     }
   }
   window.__ag_cleanup_fns = [];
+  if ('__AG_PATCH_CTX__' in window) {
+    try {
+      delete window.__AG_PATCH_CTX__;
+    } catch (e) {}
+  }
   if (window.__ag_metrics_ro) {
     try {
       window.__ag_metrics_ro.disconnect();
@@ -314,17 +316,17 @@
       const blocks = [];
       if (globalDecls.length > 0) {
         blocks.push(
-          `:root, html[data-ag-os][data-ag-wax-seal]:not([data-ag-disabled]), html[data-ag-os][data-ag-wax-seal]:not([data-ag-disabled]) body { ${globalDecls.join(' ')} }`
+          `:root, html:root[data-ag-wax-seal]:not([data-ag-disabled]), html:root[data-ag-wax-seal]:not([data-ag-disabled]) body { ${globalDecls.join(' ')} }`
         );
       }
       if (lightDecls.length > 0) {
         blocks.push(
-          `html[data-ag-os][data-ag-wax-seal]:not([data-ag-theme-mode="dark"]):not(:has(> body.dark)), html[data-ag-os][data-ag-wax-seal]:not([data-ag-theme-mode="dark"]) body:not(.dark) { ${lightDecls.join(' ')} }`
+          `html:root[data-ag-wax-seal]:not([data-ag-theme-mode="dark"]):not(:has(> body.dark)), html:root[data-ag-wax-seal]:not([data-ag-theme-mode="dark"]) body:not(.dark) { ${lightDecls.join(' ')} }`
         );
       }
       if (darkDecls.length > 0) {
         blocks.push(
-          `html[data-ag-os][data-ag-wax-seal]:not([data-ag-disabled])[data-ag-theme-mode="dark"], html[data-ag-os][data-ag-wax-seal]:not([data-ag-disabled])[data-ag-theme-mode="dark"] body, html[data-ag-os][data-ag-wax-seal]:not([data-ag-disabled]):has(> body.dark), html[data-ag-os][data-ag-wax-seal]:not([data-ag-disabled]) body.dark { ${darkDecls.join(' ')} }`
+          `html:root[data-ag-wax-seal]:not([data-ag-disabled])[data-ag-theme-mode="dark"], html:root[data-ag-wax-seal]:not([data-ag-disabled])[data-ag-theme-mode="dark"] body, html:root[data-ag-wax-seal]:not([data-ag-disabled]):has(> body.dark), html:root[data-ag-wax-seal]:not([data-ag-disabled]) body.dark { ${darkDecls.join(' ')} }`
         );
       }
       const nextCss = blocks.join('\n');
@@ -448,25 +450,6 @@
     } catch (e) {
       return fallbackHex;
     }
-  }
-
-  function syncWinTitleBarOverlay(isDark, force = false, customFallbacks = null) {
-    if (IS_SWARM_PLUGIN_FRAME || DETECTED_OS !== 'win32') return;
-    try {
-      const setOverlay = window.electronNative?.setTitleBarOverlay;
-      if (typeof setOverlay !== 'function') return;
-      const targetEl = document.body || document.documentElement;
-      if (!targetEl || typeof getComputedStyle !== 'function') return;
-      const fbBg = (customFallbacks && customFallbacks.bg) || (isDark ? '#111114' : '#F7F5F0');
-      const fbFg = (customFallbacks && customFallbacks.fg) || (isDark ? '#FAFAFA' : '#1F1E1D');
-      const bgHex = resolveCssColorToHex6('--sidebar', targetEl, fbBg);
-      const fgHex = resolveCssColorToHex6('--foreground', targetEl, fbFg);
-      const sig = bgHex + '|' + fgHex;
-      if (force || window.__ag_last_overlay_sig !== sig) {
-        window.__ag_last_overlay_sig = sig;
-        Promise.resolve(setOverlay({ color: bgHex, symbolColor: fgHex })).catch(() => {});
-      }
-    } catch (e) {}
   }
 
   function syncCurtainSurfaceColor(force = false) {
@@ -620,7 +603,6 @@
     document.documentElement.removeAttribute('data-ag-theme-mode');
     document.documentElement.removeAttribute('data-ag-page-type');
     document.documentElement.removeAttribute('data-ag-wax-seal');
-    document.documentElement.removeAttribute('data-ag-os');
     const restoreNativeSurfaces = () => {
       syncCurtainSurfaceColor(true);
       if (IS_SWARM_PLUGIN_FRAME) {
@@ -636,42 +618,6 @@
           }
           delete window.__ag_swarm_orig_data_theme;
         }
-      } else {
-        const hEl = document.documentElement;
-        const bEl = document.body;
-        const sysDark = !!(
-          typeof window.matchMedia === 'function' && window.matchMedia('(prefers-color-scheme: dark)').matches
-        );
-        const hDataTheme = hEl ? hEl.getAttribute('data-theme') : null;
-        const bHydrated = !!(bEl && (bEl.hasAttribute('data-agy-theme') || bEl.hasAttribute('data-newux-theme')));
-        let nativeDark = false;
-        if (
-          hDataTheme === 'dark' ||
-          (bEl && (bEl.classList.contains('dark') || bEl.classList.contains('theme-dark') || bEl.classList.contains('dark-theme')))
-        ) {
-          nativeDark = true;
-        } else if (
-          hDataTheme === 'light' ||
-          (bEl && (bEl.classList.contains('theme-light') || bEl.classList.contains('light-theme') || bEl.classList.contains('light')))
-        ) {
-          nativeDark = false;
-        } else if (hEl && hEl.style.colorScheme === 'dark') {
-          nativeDark = true;
-        } else if (hEl && hEl.style.colorScheme === 'light') {
-          nativeDark = false;
-        } else if (bHydrated) {
-          nativeDark = false;
-        } else if (boot.hostThemeMode === 'dark') {
-          nativeDark = true;
-        } else if (boot.hostThemeMode === 'light') {
-          nativeDark = false;
-        } else {
-          nativeDark = sysDark;
-        }
-        syncWinTitleBarOverlay(nativeDark, true, {
-          bg: nativeDark ? '#131313' : '#FAFAFA',
-          fg: nativeDark ? '#FAFAFA' : '#383A42'
-        });
       }
     };
     restoreAllTranslations(document.body);
@@ -734,8 +680,6 @@
   }
 
   document.documentElement.setAttribute('data-ag-wax-seal', MODULES.composerWaxSeal === false ? 'off' : 'on');
-  const detectedOs = DETECTED_OS;
-  document.documentElement.setAttribute('data-ag-os', detectedOs);
   applyThemeVars(THEME_VARS, DARK_THEME_VARS);
 
   let userStyle = document.getElementById('antigravity-user-custom-style');
@@ -839,7 +783,7 @@
         (e) => {
           const k = String(e.key || '');
           if (PURE_MOD_KEYS.has(k)) return;
-          if ((e.metaKey || e.ctrlKey) && !e.altKey && (k === '-' || k === '_' || k === '=' || k === '+' || k === '0')) {
+          if (e.metaKey && !e.ctrlKey && !e.altKey && (k === '-' || k === '_' || k === '=' || k === '+' || k === '0')) {
             return;
           }
           markUserDirty();
@@ -1082,7 +1026,7 @@
   }
 
   // ============================================================================
-  // 2.1 缩放快捷键修复与 2.31.2 原生菜单快捷键防双倍缩放保护（兼容 Numpad、欧式键盘与 Windows BaseWindow）
+  // 2.1 缩放快捷键修复与 2.31.2 原生菜单快捷键防双倍缩放保护（兼容 Numpad 与欧式键盘）
   // ============================================================================
   try {
     const initZoom = window.electronNative?.getZoomLevel?.();
@@ -1112,9 +1056,7 @@
   window.__ag_zoom_keydown_fn = (e) => {
     if (MODULES.zoomShortcuts === false || MODULES.deadlockHealer === false) return;
     if (e.isComposing) return;
-    const isMac = detectedOs === 'darwin';
-    const modKey = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
-    if (!modKey || e.altKey) return;
+    if (!e.metaKey || e.ctrlKey || e.altKey) return;
 
     const k = String(e.key || '');
     const isCjkImeKey =
@@ -1191,7 +1133,7 @@
     if (
       !window.__ag_self_zooming &&
       ((typeof curFactor === 'number' && typeof settledBefore === 'number' && Math.abs(curFactor - settledBefore) > 0.003) ||
-        nowTs - (window.__ag_last_ext_zoom_ts || 0) < (isMac ? 80 : 40))
+        nowTs - (window.__ag_last_ext_zoom_ts || 0) < 80)
     ) {
       if (typeof curFactor === 'number') window.__ag_settled_zoom = curFactor;
       return;
@@ -1245,13 +1187,13 @@
       }
     };
 
-    // Windows / Linux 无 NSMenu 加速器竞态，且 macOS 原生菜单未绑定小键盘与 '_'：零延迟即时执行，确保长按连发 (e.repeat) 丝滑不吞键
-    if (!isMac || String(e.code || '').startsWith('Numpad') || k === '_') {
+    // macOS 原生菜单未绑定小键盘与 '_'：零延迟即时执行，确保长按连发 (e.repeat) 丝滑不吞键
+    if (String(e.code || '').startsWith('Numpad') || k === '_') {
       runZoomAction();
       return;
     }
 
-    // macOS 保留 60ms NSMenu 防双倍缩放观察窗口
+    // 保留 60ms NSMenu 防双倍缩放观察窗口
     if (window.__ag_zoom_timer) {
       clearTimeout(window.__ag_zoom_timer);
       window.__ag_zoom_timer = null;
@@ -1510,7 +1452,6 @@
           } catch (e) {}
         }
       }
-      syncWinTitleBarOverlay(isDark, darkPresetChanged);
       syncCurtainSurfaceColor(darkPresetChanged);
       if (typeof window.__ag_sync_warm_night_btn_fn === 'function') {
         window.__ag_sync_warm_night_btn_fn();
@@ -2135,52 +2076,6 @@
     return '';
   }
 
-  function clearMetricsTooltipHideTimer() {
-    if (window.__ag_metrics_tt_hide_timer) {
-      try {
-        clearTimeout(window.__ag_metrics_tt_hide_timer);
-      } catch (e) {}
-      window.__ag_metrics_tt_hide_timer = null;
-    }
-  }
-
-  function scheduleMetricsTooltipHide(delayMs = 160) {
-    clearMetricsTooltipHideTimer();
-    window.__ag_metrics_tt_hide_timer = setTimeout(() => {
-      window.__ag_metrics_tt_hide_timer = null;
-      const tt = document.getElementById('ag-live-metrics-tooltip');
-      if (tt) tt.removeAttribute('data-visible');
-      window.__ag_active_tooltip_pill = null;
-    }, delayMs);
-  }
-
-  function copyTextWithFallback(text) {
-    if (!text) return Promise.resolve(false);
-    if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
-      return navigator.clipboard
-        .writeText(text)
-        .then(() => true)
-        .catch(() => fallbackExecCopy(text));
-    }
-    return Promise.resolve(fallbackExecCopy(text));
-  }
-
-  function fallbackExecCopy(text) {
-    try {
-      const ta = document.createElement('textarea');
-      ta.value = text;
-      ta.setAttribute('readonly', '');
-      ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;opacity:0;pointer-events:none;';
-      document.body.appendChild(ta);
-      ta.select();
-      const ok = document.execCommand('copy');
-      ta.remove();
-      return !!ok;
-    } catch (e) {
-      return false;
-    }
-  }
-
   function ensureMetricsTooltip() {
     let tt = document.getElementById('ag-live-metrics-tooltip');
     if (tt && tt.getAttribute('data-ag-tt-ver') !== PATCH_VERSION) {
@@ -2197,45 +2092,11 @@
     } else if (tt && tt.parentElement !== document.body && document.body) {
       document.body.appendChild(tt);
     }
-    if (tt && !tt.__ag_tt_interactive_bound) {
-      tt.__ag_tt_interactive_bound = true;
-      tt.addEventListener('mouseenter', () => {
-        clearMetricsTooltipHideTimer();
-      });
-      tt.addEventListener('mouseleave', () => {
-        scheduleMetricsTooltipHide(120);
-      });
-      tt.addEventListener('click', (ev) => {
-        const btn = ev.target && ev.target.closest && ev.target.closest('.ag-tt-copy-btn');
-        if (!btn) return;
-        ev.preventDefault();
-        ev.stopPropagation();
-        const cmd = String(btn.getAttribute('data-ag-copy-cmd') || '').trim();
-        if (!cmd) return;
-        copyTextWithFallback(cmd).then((ok) => {
-          const label = ok ? '✓ 已复制' : '复制失败';
-          tt.__ag_copy_feedback_until = Date.now() + 1800;
-          tt.__ag_copy_feedback_text = label;
-          tt.__ag_copy_feedback_cmd = cmd;
-          if (btn.isConnected) btn.textContent = label;
-          if (tt.__ag_copy_reset_timer) clearTimeout(tt.__ag_copy_reset_timer);
-          tt.__ag_copy_reset_timer = setTimeout(() => {
-            tt.__ag_copy_reset_timer = null;
-            tt.__ag_copy_feedback_until = 0;
-            tt.__ag_copy_feedback_text = '';
-            tt.__ag_copy_feedback_cmd = '';
-            const curBtn = tt.querySelector && tt.querySelector('.ag-tt-copy-btn');
-            if (curBtn) curBtn.textContent = '复制命令';
-          }, 1800);
-        });
-      });
-    }
     return tt;
   }
 
   function hideMetricsTooltipIfOwner(pill) {
     if (!pill || window.__ag_active_tooltip_pill === pill) {
-      clearMetricsTooltipHideTimer();
       const tt = document.getElementById('ag-live-metrics-tooltip');
       if (tt) tt.removeAttribute('data-visible');
       if (!pill || window.__ag_active_tooltip_pill === pill) {
@@ -2373,7 +2234,6 @@
     span.setAttribute('data-ag-metrics-text', '1');
     pill.appendChild(span);
     pill.addEventListener('mouseenter', () => {
-      clearMetricsTooltipHideTimer();
       const map = isWeakMapInstance(window.__ag_pill_tooltip_map) ? window.__ag_pill_tooltip_map : pillTooltipMap;
       const ttHtml = map.get(pill);
       if (!ttHtml) return;
@@ -2393,12 +2253,7 @@
     });
     pill.addEventListener('mouseleave', () => {
       if (window.__ag_active_tooltip_pill !== pill) return;
-      const tt = document.getElementById('ag-live-metrics-tooltip');
-      if (tt && tt.querySelector && tt.querySelector('.ag-tt-copy-btn')) {
-        scheduleMetricsTooltipHide(160);
-      } else {
-        hideMetricsTooltipIfOwner(pill);
-      }
+      hideMetricsTooltipIfOwner(pill);
     });
     return pill;
   }
@@ -2581,15 +2436,6 @@
       const tt = document.getElementById('ag-live-metrics-tooltip');
       if (tt && tt.getAttribute('data-visible') === '1' && tt.innerHTML !== nextTooltip) {
         tt.innerHTML = nextTooltip;
-        if (tt.__ag_copy_feedback_until > Date.now() && tt.__ag_copy_feedback_cmd) {
-          const newBtn = tt.querySelector && tt.querySelector('.ag-tt-copy-btn');
-          if (
-            newBtn &&
-            String(newBtn.getAttribute('data-ag-copy-cmd') || '').trim() === tt.__ag_copy_feedback_cmd
-          ) {
-            newBtn.textContent = tt.__ag_copy_feedback_text || '✓ 已复制';
-          }
-        }
       }
     }
     const nextHtml = payload.inlineHtml || '';
@@ -4323,39 +4169,6 @@
     window.addEventListener('DOMContentLoaded', window.__ag_dcl_handler, { once: true });
   }
 
-  // ============================================================================
-  // 5. 开放用户自定义前端脚本钩子 (user/custom.js，沙箱异常隔离，同时提供 ctx 与 boot)
-  // ============================================================================
-  window.__AG_PATCH_CTX__ = {
-    version: PATCH_VERSION,
-    preset: DEFAULT_PRESET,
-    darkPreset: DEFAULT_DARK_PRESET,
-    config: boot.config || {},
-    modules: MODULES,
-    features: MODULES,
-    themeVars: THEME_VARS,
-    darkThemeVars: DARK_THEME_VARS,
-    dict: DICT,
-    get metrics() {
-      return window.__ag_last_metrics || null;
-    },
-    syncPreset: syncChuanbanPreset,
-    ensureMetricsPill,
-    onCleanup(fn) {
-      if (typeof fn === 'function') {
-        window.__ag_cleanup_fns.push(fn);
-      }
-    }
-  };
-
-  if (MODULES.customJs && boot.customJs && typeof boot.customJs === 'string' && boot.customJs.trim()) {
-    try {
-      const fn = new Function('ctx', 'boot', boot.customJs);
-      fn(window.__AG_PATCH_CTX__, window.__AG_PATCH_CTX__);
-    } catch (err) {
-      console.error('[Antigravity Patch] Error in user/custom.js:', err);
-    }
-  }
   if (!IS_SWARM_PLUGIN_FRAME) {
     return window.__ag_resolved_theme_mode || null;
   }
