@@ -3,7 +3,7 @@
  * chuanban-antigravity-theme-patch · macOS 专属一键安装、自检、CDP 接力重启、安全模式验证、打包与回滚 CLI (install.mjs)
  *
  * 支持子命令：
- *   node install.mjs install  [--channel auto|stable|insiders] [--preset high-contrast|claude-desktop-purewhite|vintage-deep] [--dark-preset onyx|claude-warm] [--sync-user] [--with-launcher] [--no-service] [--target-dir <dir>]
+ *   node install.mjs install  [--channel auto|stable|insiders] [--preset native|morandi|absolutely|claude-desktop-purewhite|vintage-deep] [--dark-preset onyx|claude-warm] [--sync-user] [--with-launcher] [--no-service] [--target-dir <dir>]
  *   node install.mjs relaunch [--channel auto|stable|insiders] [--force] [--target-dir <dir>]
  *   node install.mjs install-fonts --from <font-folder-path>
  *   node install.mjs doctor   [--channel auto|stable|insiders] [--target-dir <dir>]
@@ -114,7 +114,7 @@ function buildManifest(baseDir = __dirname) {
   }
   const manifest = {
     name: 'chuanban-antigravity-theme-patch',
-    version: '5.5.5',
+    version: '6.0.0',
     platform: 'darwin',
     minNodeVersion: '22.0.0',
     fullMetricsNodeVersion: '22.13.0',
@@ -672,6 +672,7 @@ async function inspectLiveWindow(portFileOrEnv, fallbackPort = 9222) {
                   hasUserStyle: !!document.getElementById('antigravity-user-custom-style'),
                   preset: document.documentElement ? document.documentElement.getAttribute('data-ag-preset') : null,
                   darkPreset: document.documentElement ? document.documentElement.getAttribute('data-ag-dark-preset') : null,
+                  uiLang: document.documentElement ? document.documentElement.getAttribute('data-ag-lang') : null,
                   themeMode: document.documentElement ? document.documentElement.getAttribute('data-ag-theme-mode') : null,
                   pageType: document.documentElement ? document.documentElement.getAttribute('data-ag-page-type') : null,
                   waxSeal: document.documentElement ? document.documentElement.getAttribute('data-ag-wax-seal') : null,
@@ -829,9 +830,9 @@ function ensureCdpLaunchers(channel = 'auto', options = {}) {
         '  <key>CFBundlePackageType</key>',
         '  <string>APPL</string>',
         '  <key>CFBundleShortVersionString</key>',
-        '  <string>5.5.5</string>',
+        '  <string>6.0.0</string>',
         '  <key>CFBundleVersion</key>',
-        '  <string>555</string>',
+        '  <string>600</string>',
         ...(iconBase ? ['  <key>CFBundleIconFile</key>', `  <string>${iconBase}</string>`] : []),
         '  <key>LSMinimumSystemVersion</key>',
         '  <string>12.0</string>',
@@ -1296,6 +1297,26 @@ async function runInstall() {
   const isCustomSandboxTarget =
     hasFlag('--target-dir') && !isSameTargetPath(targetDir, defaultTarget) && !hasFlag('--register-service');
 
+  const VALID_LIGHT_PRESETS = new Set([
+    'native',
+    'morandi',
+    'absolutely',
+    'high-contrast',
+    'claude-desktop-purewhite',
+    'vintage-deep'
+  ]);
+  const VALID_DARK_PRESETS = new Set(['onyx', 'claude-warm']);
+  if (preset && !VALID_LIGHT_PRESETS.has(preset)) {
+    console.error(
+      `[ERROR] Invalid --preset "${preset}". Expected one of: native, morandi, absolutely, claude-desktop-purewhite, vintage-deep.`
+    );
+    process.exit(1);
+  }
+  if (darkPreset && !VALID_DARK_PRESETS.has(darkPreset)) {
+    console.error(`[ERROR] Invalid --dark-preset "${darkPreset}". Expected one of: onyx, claude-warm.`);
+    process.exit(1);
+  }
+
   const env = await detectEnvironment(channel);
   if (!env.nodeBasicOk) {
     console.error(`[ERROR] Node.js >= 22.0.0 is required (current: ${env.nodeVer}).`);
@@ -1388,14 +1409,17 @@ async function runInstall() {
     currentCfg.channel = 'auto';
   }
   if (preset) {
-    currentCfg.preset = preset;
-  } else if (!currentCfg.preset) {
-    currentCfg.preset = 'high-contrast';
+    currentCfg.preset = preset === 'high-contrast' ? 'morandi' : preset;
+  } else if (!currentCfg.preset || currentCfg.preset === 'high-contrast') {
+    currentCfg.preset = 'morandi';
   }
   if (darkPreset) {
     currentCfg.darkPreset = darkPreset;
   } else if (!currentCfg.darkPreset) {
     currentCfg.darkPreset = 'onyx';
+  }
+  if (!currentCfg.installedLocale) {
+    currentCfg.installedLocale = 'zh-CN';
   }
   if (!currentCfg.modules || typeof currentCfg.modules !== 'object' || Array.isArray(currentCfg.modules)) {
     currentCfg.modules = {};
@@ -1912,7 +1936,7 @@ switch (subcommand) {
     break;
   default:
     console.log(`Usage (macOS only):
-  node install.mjs install       [--channel auto|stable|insiders] [--preset high-contrast|claude-desktop-purewhite|vintage-deep] [--dark-preset onyx|claude-warm] [--sync-user] [--with-launcher] [--no-service]
+  node install.mjs install       [--channel auto|stable|insiders] [--preset native|morandi|absolutely|claude-desktop-purewhite|vintage-deep] [--dark-preset onyx|claude-warm] [--sync-user] [--with-launcher] [--no-service]
   node install.mjs relaunch      [--channel auto|stable|insiders] [--force]
   node install.mjs install-fonts --from <font-folder-path>
   node install.mjs doctor        [--channel auto|stable|insiders]

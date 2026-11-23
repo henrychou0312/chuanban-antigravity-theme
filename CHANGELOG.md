@@ -4,6 +4,33 @@
 
 ---
 
+## [v6.0.0-macos-hardened] - 2026-11-23
+
+> **适用平台**：仅限 **macOS（`darwin`）**（Antigravity `2.34.0+` / `2.33.x`，向下完全兼容 `2.32.x` / `2.31.x` / `2.30.0`）  
+> **变更定位**：同步上游 [`Anarcadia/chuanban-antigravity-theme-patch`](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) `v6.0.0`（`7c35a64`）及后续修复至 `29df839` 全部 macOS 适用与跨平台更新（直接忽略 Windows 专属变更，完整保留 macOS-only 精简架构与运行时安全加固）
+
+### Added & Changed（全新默认「莫兰迪古典矿物」配色、五段式主题胶囊、`[ EN | 中文 ]` 零重刷语言双切、单层合并输入框与 `1,965` 条词典）
+- **全新默认「莫兰迪古典矿物（`morandi`）」全 UI 配色与单层合并 `2px` 对话框（`core/theme.css` / `user/config.json` / `install.mjs`）**：
+  - 全域采用「暖宣纸灰画布 `#F4F1EA` + 亚麻石膏侧栏 `#E8E3D9` + 烟岚石青/青瓷/藤赭古典矿物语义色」冷暖互补体系；安装器新增 `--preset` / `--dark-preset` 参数合法性校验，旧版默认 `"high-contrast"` 升级时自动平滑迁移至 `"morandi"`；
+  - 重构主对话、新建对话首页与子 Agent 侧栏输入框：移除内外双层套框，合并为单层 `2px` 同心内曲率粗线（`MO` 与 `🌙` 采用雾霭青灰 → 烟岚石青矿石色框与按钮；`Absolutely！` 与 `📖 暖纸深色` 完整保留经典 Claude 暖陶橙色系 `#DFAC98 / #6E4436 → #A64229 / #D97757` 与 `#D97757` 主按钮，并同步上游 `29df839` 恢复原汁原味 Claude 暖纸深夜 `#242320` / `#1B1A18` / `#F3F0E4` 暗色盘；保留语音光环 `voice-glow-ring` 与 `voice-live-pill` 动效隔离）；
+  - 升级底部实时指标胶囊为中英双语上下文圆环进度（`.ag-ctx-ring`）与精简 4 行矿石色悬停详情卡（支持在 `user/config.json` 中显式配置 `"metricsMode": "full"` 切回旧版全量行内展示）。
+- **外观界面五段式主题胶囊 `[ A | ✳️ | MO | 📖 | 🌙 ]` 与 `<1ms` 原版旁路（`core/runtime.js` / `core/daemon.mjs` / `core/theme.css`）**：
+  - 在「系统设置 → 外观界面」集成 `A 原版配色`、`✳️ Absolutely！`、`MO 莫兰迪色`、`📖 暖纸深色`、`🌙 深色` 五段唯一高亮胶囊，内置指针停留原生英文气泡防逃逸压制与 `120ms` 防抖落盘；
+  - 通过 `/* __AG_THEME_RULES_START__ */` 与 `/* __AG_WIDGETS_CSS_START__ */` 将样式表三路拆分为 `#ag-font-faces`（常驻隔离防缺字）、`#ag-custom-fonts` 与 `#ag-ui-widgets`，切入 `A 原版配色` 时硬件级旁路主题与自定义字体（耗时 `<1ms`），并自动清理 `Swarm` 插件子帧残留内联变量恢复官方原貌。
+- **外观界面独立 `[ EN | 中文 ]` 零重刷二元语言切换与 `1,965` 条零冲突汉化（`core/runtime.js` / `core/daemon.mjs` / `core/i18n.json`）**：
+  - 在外观 `.agy-card` 新增「界面语言 / Language」`[ EN | 中文 ]` 切换行（预留 `installedLocale` 扩展槽位）：切至 `EN` 即刻断开 `MutationObserver` 实现零监听开销、无损还原全页文本与属性，并同步双语指标胶囊、Token 统计侧栏与 `Swarm` 子帧；切回 `中文` 毫秒级全量重扫恢复，且将 `modules.i18n` 从 bundle 哈希剥离避免触发整页重注；
+  - 扩充 23 条子 Agent 全视图、蜂群协作者（`Swarm Worker`）与最大化面板文案至 **`1,965` 条**（零大小写与弯直引号碰撞），新增 7 组子 Agent 动态翻译规则并修复复数 `'s'` 剥离对 `(12s)` 耗时的误伤，严格保护用户自定义子 Agent 名称不被误翻。
+- **渲染性能优化、热重载广播顺序与安全落盘加固（`core/theme.css` / `core/daemon.mjs` / `core/runtime.js` / `assets/`）**：
+  - 全面清除 `body:has()`、`:has(> body.dark)` 与全局 `:nth-child():has()` 桶并为 `[data-testid="conversation-list-sidebar"]` 虚拟滚动容器补齐不透明实色底，收敛 `--nux-focus-ring` 伪焦点橙框并优化 rAF 合批；
+  - 新增 `persistLightPresetToUserConfig` / `persistUiLangToUserConfig` / `broadcastPresetToTargets` / `broadcastUiLangToTargets` 与 `targetLightPresets` 跨窗口及 Swarm 子帧同步，沿用 `writePrivateUserConfigAtomicSync`（`0700`/`0600` 属主独占权限 + POSIX 原子重命名），并将外部配置变更广播移至 `cachedInjectScript` 与 `cachedBundleSig` 重建完成之后以消除竞态；
+  - 同步更新 `assets/` 下 v6.0.0 四张实机预览截图，并对齐 `core/manifest.json`（`version: "6.0.0"`、`platform: "darwin"`）与 `README.md` / `SKILL.md`。
+
+### Security & Ignored（安全加固保持与 Windows 专属忽略）
+- **保留运行时安全加固**：继续保持 `core/manifest.json` 启动与热重载 Fail-Closed SHA-256 校验、零 `user/custom.js` / `new Function` / `window.__AG_PATCH_CTX__`、零外部 `antigravity-zh-title-patch.py` 执行与告警卡、全目录 `0700`/`0600` 权限收敛及 `--no-service` 模式。
+- **忽略 Windows 专属变更**：依据本仓库 macOS-only 定位，已直接忽略上游 `v6.0.0` 中的 Windows 专属代码与文档（`syncWinTitleBarOverlay` 顶栏同步、Windows NTFS Defender `EPERM`/`EBUSY` 5 次退避写盘回退 `atomicWriteTextFileSync`、`html[data-ag-os="win32"]` CSS 选择器，以及 Windows 拆分字体包 / `SuperTTC` / WSL2 文档指引）。
+
+---
+
 ## [v5.5.5-macos-hardened] - 2026-11-22
 
 > **适用平台**：仅限 **macOS（`darwin`）**（Antigravity `2.34.0+` / `2.33.x`，向下完全兼容 `2.32.x` / `2.31.x` / `2.30.0`）  
