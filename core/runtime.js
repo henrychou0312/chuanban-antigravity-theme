@@ -106,7 +106,7 @@
     }
   }
 
-  const PATCH_VERSION = boot.version || '20261123-v6.0.0';
+  const PATCH_VERSION = boot.version || '20261123-v6.0.1';
   const ENABLED = boot.enabled !== false;
   const CSS_TEXT = boot.cssText || '';
   const CUSTOM_CSS_TEXT = boot.customCss || '';
@@ -2236,6 +2236,11 @@
           window.__ag_rerender_token_analytics_lang();
         } catch (e) {}
       }
+      if (typeof window.__ag_check_route_fn === 'function') {
+        try {
+          window.__ag_check_route_fn();
+        } catch (e) {}
+      }
     }
     window.__ag_refresh_self_ui_lang = refreshSelfOwnedUiLang;
 
@@ -3051,6 +3056,12 @@
     window.__ag_metrics_cache_ver = PATCH_VERSION;
   }
   const metricsById = window.__ag_metrics_by_id;
+  const pendingRunUntilByCid = Object.create(null);
+  let lastMetricsReqAt = 0;
+  let metricsDomCheckRafId = 0;
+  let metricsDomObserverStarted = false;
+  const PENDING_RING_SVG =
+    '<svg class="ag-ctx-ring ag-ctx-ok" width="13" height="13" viewBox="0 0 16 16" aria-hidden="true"><circle class="ag-ctx-ring-track" cx="8" cy="8" r="5.8" fill="none" stroke-width="2.1"/><circle class="ag-ctx-ring-fill" cx="8" cy="8" r="5.8" fill="none" stroke-width="2.1" stroke-linecap="round" stroke-dasharray="36.44" stroke-dashoffset="32.80" transform="rotate(-90 8 8)"/></svg>';
 
   window.__ag_cleanup_fns.push(() => {
     for (const ro of activeMetricsObservers) {
@@ -3067,6 +3078,8 @@
     activeMetricsRafs.clear();
     pillLayoutRafId = 0;
     routeCheckRafId = 0;
+    metricsDomCheckRafId = 0;
+    metricsDomObserverStarted = false;
     pendingPillLayoutBoxes.clear();
     for (const tid of metricsRouteTimers) {
       try {
@@ -3197,9 +3210,14 @@
         }
         return '';
       }
-      const view =
-        box.closest && box.closest('[data-testid="conversation-view"][data-cascade-id], [data-cascade-id]');
-      if (view) {
+      const convView =
+        box.closest && box.closest('[data-testid="conversation-view"][data-cascade-id]');
+      if (convView) {
+        const cid = String(convView.getAttribute('data-cascade-id') || '').trim().toLowerCase();
+        if (CASCADE_UUID_RE.test(cid)) return cid;
+      }
+      const view = box.closest && box.closest('[data-cascade-id]');
+      if (view && view !== convView) {
         const cid = String(view.getAttribute('data-cascade-id') || '').trim().toLowerCase();
         if (CASCADE_UUID_RE.test(cid)) return cid;
       }
@@ -3551,12 +3569,49 @@
     return primary;
   }
 
+  function isBoxActivelyRunning(box) {
+    return !!(box && box.querySelector && box.querySelector('[data-testid="input-cancel-button"]'));
+  }
+
+  function shouldShowPendingForBox(box, cid) {
+    if (!cid || !CASCADE_UUID_RE.test(cid)) return false;
+    if (isBoxActivelyRunning(box)) {
+      pendingRunUntilByCid[cid] = Date.now() + 2500;
+      return true;
+    }
+    return (pendingRunUntilByCid[cid] || 0) > Date.now();
+  }
+
+  function applyPendingStateToPill(box, pill) {
+    if (!pill) return;
+    const textEl = getPillTextEl(pill);
+    const ttMap = isWeakMapInstance(window.__ag_pill_tooltip_map) ? window.__ag_pill_tooltip_map : pillTooltipMap;
+    pill.removeAttribute('data-ag-rendered-cid');
+    pill.setAttribute('data-ag-pending', '1');
+    ttMap.delete(pill);
+    hideMetricsTooltipIfOwner(pill);
+    const pendingLabel = isUiEnglish() ? 'Measuring\u2026' : '采样中\u2026';
+    const nextHtml = `${PENDING_RING_SVG}<span class="ag-ring-after">${pendingLabel}</span>`;
+    const textChanged = !!(textEl && textEl.innerHTML !== nextHtml);
+    if (textEl && textChanged) {
+      textEl.innerHTML = nextHtml;
+    }
+    const wasHidden = pill.style.display !== 'inline-flex';
+    if (wasHidden) {
+      pill.style.display = 'inline-flex';
+    }
+    if (wasHidden || textChanged) {
+      scheduleDeferredPillLayout(box);
+    }
+  }
+
   function applyPayloadToPill(box, pill, payload) {
     if (!pill) return;
     const textEl = getPillTextEl(pill);
     const ttMap = isWeakMapInstance(window.__ag_pill_tooltip_map) ? window.__ag_pill_tooltip_map : pillTooltipMap;
     if (!payload || !payload.hasData) {
       pill.removeAttribute('data-ag-rendered-cid');
+      pill.removeAttribute('data-ag-pending');
       if (textEl && textEl.innerHTML !== '') {
         textEl.innerHTML = '';
       }
@@ -3565,8 +3620,10 @@
       hideMetricsTooltipIfOwner(pill);
       return;
     }
+    pill.removeAttribute('data-ag-pending');
     const renderedCid = String(payload.cascadeId || pill.getAttribute('data-ag-cascade-id') || '').trim().toLowerCase();
     if (renderedCid) {
+      delete pendingRunUntilByCid[renderedCid];
       if (pill.getAttribute('data-ag-rendered-cid') !== renderedCid) {
         pill.setAttribute('data-ag-rendered-cid', renderedCid);
       }
@@ -3610,10 +3667,12 @@
     const renderedCid = String(pill.getAttribute('data-ag-rendered-cid') || '').trim().toLowerCase();
     const cached = metricsById[cid];
     if (cached && cached.hasData) {
-      if (renderedCid !== cid || pill.style.display !== 'inline-flex') {
+      if (renderedCid !== cid || pill.hasAttribute('data-ag-pending') || pill.style.display !== 'inline-flex') {
         applyPayloadToPill(box, pill, cached);
       }
-    } else if (renderedCid !== '' || pill.style.display === 'inline-flex') {
+    } else if (shouldShowPendingForBox(box, cid)) {
+      applyPendingStateToPill(box, pill);
+    } else if (renderedCid !== '' || pill.hasAttribute('data-ag-pending') || pill.style.display === 'inline-flex') {
       applyPayloadToPill(box, pill, null);
     }
   }
@@ -3630,6 +3689,7 @@
         } catch (e) {}
       }
       activeMetricsObservers.clear();
+      metricsDomObserverStarted = false;
       hideMetricsTooltipIfOwner(null);
       return null;
     }
@@ -3671,13 +3731,19 @@
           mountedNewPill = true;
         }
         const boxCid =
-          String(pill.getAttribute('data-ag-cascade-id') || '').trim().toLowerCase() ||
-          resolveBoxCascadeId(box, totalBoxes);
+          resolveBoxCascadeId(box, totalBoxes) ||
+          String(pill.getAttribute('data-ag-cascade-id') || '').trim().toLowerCase();
         if (boxCid && pill.getAttribute('data-ag-cascade-id') !== boxCid) {
           pill.setAttribute('data-ag-cascade-id', boxCid);
         }
         if (boxCid === cid) {
-          applyPayloadToPill(box, pill, payload);
+          if (payload.hasData) {
+            applyPayloadToPill(box, pill, payload);
+          } else if (shouldShowPendingForBox(box, cid)) {
+            applyPendingStateToPill(box, pill);
+          } else {
+            applyPayloadToPill(box, pill, null);
+          }
         }
       }
       if (mountedNewPill) {
@@ -3686,6 +3752,19 @@
       }
     } catch (e) {}
   };
+
+  function sendMetricsSubscription(watchedIds, watchedSig, forceRetry = false) {
+    if (typeof window.__agRequestMetrics !== 'function') return false;
+    if (!forceRetry && watchedSig === window.__ag_watched_cascade_sig) return true;
+    try {
+      window.__agRequestMetrics(JSON.stringify(watchedIds));
+      window.__ag_watched_cascade_sig = watchedSig;
+      lastMetricsReqAt = Date.now();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
 
   function checkRouteAndMountMetrics() {
     try {
@@ -3748,13 +3827,17 @@
       window.__ag_watched_cascade_id = primaryWatched;
       window.__ag_last_metrics = primaryWatched ? metricsById[primaryWatched] || null : null;
 
-      if (watchedSig !== window.__ag_watched_cascade_sig) {
-        window.__ag_watched_cascade_sig = watchedSig;
-        if (typeof window.__agRequestMetrics === 'function') {
-          try {
-            window.__agRequestMetrics(JSON.stringify(watchedIds));
-          } catch (e) {}
+      let hasUnackedCid = false;
+      for (let i = 0; i < watchedIds.length; i++) {
+        if (!(watchedIds[i] in metricsById)) {
+          hasUnackedCid = true;
+          break;
         }
+      }
+      if (watchedSig !== window.__ag_watched_cascade_sig) {
+        sendMetricsSubscription(watchedIds, watchedSig, false);
+      } else if (hasUnackedCid && Date.now() - lastMetricsReqAt >= 1200) {
+        sendMetricsSubscription(watchedIds, watchedSig, true);
       }
     } catch (e) {}
   }
@@ -3871,6 +3954,103 @@
     });
   }
 
+  const METRICS_DOM_SKIP_SEL =
+    '[data-markdown-root], [data-testid="user-message-content"], .agy-user-bubble, .prose, .markdown, pre, code, .monaco-editor, .monaco-diff-editor, .xterm, #ag-live-metrics-pill, .ag-live-metrics-pill, [data-ag-metrics-pill], #ag-live-metrics-tooltip, [data-testid="conversation-list-sidebar"]';
+
+  function isMetricsRelevantNode(node, rawInputId, watchDescendantSel) {
+    if (!node || node.nodeType !== 1) return 0;
+    if (rawInputId && node.id === rawInputId) return 1;
+    const tid = node.getAttribute && node.getAttribute('data-testid');
+    if (tid === 'input-cancel-button') return 2;
+    if (
+      tid === 'send-button' ||
+      tid === 'conversation-view' ||
+      tid === 'side-question-tab-conversation' ||
+      tid === 'subagent-tab-conversation'
+    ) {
+      return 1;
+    }
+    if (node.classList && node.classList.contains('agy-composer-footer')) return 1;
+    if (node.firstElementChild && node.querySelector) {
+      if (node.querySelector('[data-testid="input-cancel-button"]')) return 2;
+      if (watchDescendantSel && node.querySelector(watchDescendantSel)) return 1;
+    }
+    return 0;
+  }
+
+  function scheduleMetricsDomSync(forceBackendRefresh = false) {
+    if (IS_SWARM_PLUGIN_FRAME || !MODULES.metrics) return;
+    if (!metricsDomCheckRafId) {
+      metricsDomCheckRafId = scheduleTrackedHandle(activeMetricsRafs, requestAnimationFrame, () => {
+        metricsDomCheckRafId = 0;
+        checkRouteAndMountMetrics();
+      });
+    }
+    if (forceBackendRefresh) {
+      for (const delay of [100, 450]) {
+        scheduleTrackedHandle(
+          metricsRouteTimers,
+          (cb) => setTimeout(cb, delay),
+          () => {
+            checkRouteAndMountMetrics();
+            const curIds = Array.isArray(window.__ag_watched_cascade_ids) ? window.__ag_watched_cascade_ids : [];
+            if (curIds.length > 0) {
+              sendMetricsSubscription(curIds, curIds.join(','), true);
+            }
+          }
+        );
+      }
+    }
+  }
+
+  function ensureMetricsDomObserver() {
+    if (IS_SWARM_PLUGIN_FRAME || !MODULES.metrics || metricsDomObserverStarted) return;
+    if (!document.body || typeof MutationObserver !== 'function') return;
+    const rawId = String(SELECTORS.inputBoxId || '').trim();
+    const escId = rawId.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+    const watchDescendantSel = escId
+      ? `[id="${escId}"], .agy-composer-footer, [data-testid="conversation-view"], [data-testid="side-question-tab-conversation"], [data-testid="subagent-tab-conversation"]`
+      : '.agy-composer-footer, [data-testid="conversation-view"], [data-testid="side-question-tab-conversation"], [data-testid="subagent-tab-conversation"]';
+    try {
+      const domObs = new MutationObserver((mutations) => {
+        let shouldSync = false;
+        let cancelRemoved = false;
+        for (let i = 0; i < mutations.length; i++) {
+          const m = mutations[i];
+          const t = m.target;
+          if (t && t.nodeType === 1 && t.closest && t.closest(METRICS_DOM_SKIP_SEL)) continue;
+          const added = m.addedNodes;
+          for (let j = 0; j < added.length; j++) {
+            const hit = isMetricsRelevantNode(added[j], rawId, watchDescendantSel);
+            if (hit > 0) {
+              shouldSync = true;
+              break;
+            }
+          }
+          const removed = m.removedNodes;
+          for (let k = 0; k < removed.length; k++) {
+            const hit = isMetricsRelevantNode(removed[k], rawId, watchDescendantSel);
+            if (hit === 2) {
+              shouldSync = true;
+              cancelRemoved = true;
+              break;
+            }
+            if (hit === 1) {
+              shouldSync = true;
+            }
+          }
+          if (cancelRemoved) break;
+        }
+        if (shouldSync) {
+          scheduleMetricsDomSync(cancelRemoved);
+        }
+      });
+      domObs.observe(document.body, { childList: true, subtree: true });
+      activeMetricsObservers.add(domObs);
+      metricsDomObserverStarted = true;
+    } catch (e) {}
+  }
+
   window.__ag_check_route_fn = checkRouteAndMountMetrics;
 
   if (window.__ag_metrics_route_watcher) {
@@ -3883,6 +4063,7 @@
     window.__ag_metrics_route_watcher = setInterval(checkRouteAndMountMetrics, 3000);
   }
   if (document.body || IS_SWARM_PLUGIN_FRAME) {
+    ensureMetricsDomObserver();
     checkRouteAndMountMetrics();
   }
 
@@ -5555,6 +5736,7 @@
         }
         window.__ag_ensure_warm_night_btn_fn(document);
       }
+      ensureMetricsDomObserver();
       checkRouteAndMountMetrics();
       if (typeof window.__ag_sync_token_analytics_fn === 'function' && document.body) {
         try {

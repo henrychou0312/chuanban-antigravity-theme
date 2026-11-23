@@ -1,9 +1,9 @@
 ---
 name: chuanban-antigravity-theme-patch
-description: 船板的 Antigravity 2.0 macOS 专属主题、字体与汉化补丁（v6.0.0 · 适配 macOS 版 Antigravity 2.34.0+ 单图标 M2 启动接力 + Browser 级 CDP 事件发现与 SingletonLock 零子进程空闲短路 + 全新默认「莫兰迪古典矿物 (morandi)」冷暖互补配色体系与烟岚石青单层 2px 合并输入框 + 外观面板五段式主题秒切 `[ A 原版配色 | ✳️ Absolutely！ | MO 莫兰迪色 | 📖 暖纸深色 | 🌙 深色 ]` + 外观 `[ EN | 中文 ]` 一键零重刷语言切换 + UI 西文 Google Sans Flex 可变字体引擎 × 中文更纱黑体映射 + 对话正文 Anthropic Serif 衬线 + 1,965 条零冲突词典 + 分屏/支线提问(/btw)/子Agent侧栏独立上下文圆环实时指标胶囊 + 系统设置「本地扩展 → Token 统计」磁盘持久化毫秒级分析面板）。采用「core/ 只读内核（运行时 SHA-256 强校验）+ user/ 永不覆盖改装层 + install.mjs CLI」，支持 Agent 一键部署、2.5 秒热重载定制与 --safe-mode 沙箱排障。当用户提到“安装船板 Antigravity 主题”、“升级/修复 Antigravity 汉化与字体”、“定制 Antigravity 界面样式或汉化词条”时触发。
+description: 船板的 Antigravity 2.0 macOS 专属主题、字体与汉化补丁（v6.0.1 · 适配 macOS 版 Antigravity 2.34.0+ 单图标 M2 启动接力 + Browser 级 CDP 事件发现与 SingletonLock 零子进程空闲短路 + 全新默认「莫兰迪古典矿物 (morandi)」冷暖互补配色体系与烟岚石青单层 2px 合并输入框 + 外观面板五段式主题秒切 `[ A 原版配色 | ✳️ Absolutely！ | MO 莫兰迪色 | 📖 暖纸深色 | 🌙 深色 ]` + 外观 `[ EN | 中文 ]` 一键零重刷语言切换 + UI 西文 Google Sans Flex 可变字体引擎 × 中文更纱黑体映射 + 对话正文 Anthropic Serif 衬线 + 1,965 条零冲突词典 + 分屏/支线提问(/btw)/子Agent侧栏独立上下文圆环实时指标胶囊 + 系统设置「本地扩展 → Token 统计」磁盘持久化毫秒级分析面板）。采用「core/ 只读内核（运行时 SHA-256 强校验）+ user/ 永不覆盖改装层 + install.mjs CLI」，支持 Agent 一键部署、2.5 秒热重载定制与 --safe-mode 沙箱排障。当用户提到“安装船板 Antigravity 主题”、“升级/修复 Antigravity 汉化与字体”、“定制 Antigravity 界面样式或汉化词条”时触发。
 ---
 
-# 船板的 Antigravity 主题、字体与汉化补丁（v6.0.0 · macOS 专属 · AI Agent 部署与改装契约）
+# 船板的 Antigravity 主题、字体与汉化补丁（v6.0.1 · macOS 专属 · AI Agent 部署与改装契约）
 
 > **核心摘要（致执行端 AI Agent）**：
 > - **功能边界**：仅支持 **macOS（`darwin`）**，纯运行时本地回环 CDP 注入（不改 `.asar`、不破系统签名、零第三方 npm 依赖），适配 Google Antigravity **`2.34.0+`**（向下兼容 `2.33.x` / `2.32.x` / `2.31.x` / `2.30.0`）：
@@ -24,7 +24,7 @@ description: 船板的 Antigravity 2.0 macOS 专属主题、字体与汉化补�
 1. **Google Drive 资源包（含必备字体）**：<https://drive.google.com/drive/folders/1NX92SgVUqtSjWg6bt6sIJXy-cn7J_boC>
    - 必备 4 个字体文件：`AnthropicSerif-Regular.ttf`、`AnthropicSerif-Bold.ttf`、`AnthropicMono-Regular.ttf`、`Sarasa-SuperTTC.ttc`（`v5.5.0+` UI 西文直连官方 `Google Sans Flex`，**不再依赖 `AnthropicSans-*.ttf`**）。
    - *限流备选*：若 `Sarasa-SuperTTC.ttc`（~791 MB）触发 Google Drive 24h 下载限额，可直接运行 `brew install --cask font-sarasa-gothic`。
-2. **GitHub 代码仓库**：<https://github.com/henrychou0312/chuanban-antigravity-theme>（基于上游 <https://github.com/Anarcadia/chuanban-antigravity-theme-patch> 精简为 macOS 专属并完成运行时安全加固，同步至 `v6.0.0`）
+2. **GitHub 代码仓库**：<https://github.com/henrychou0312/chuanban-antigravity-theme>（基于上游 <https://github.com/Anarcadia/chuanban-antigravity-theme-patch> 精简为 macOS 专属并完成运行时安全加固，同步至 `v6.0.1`）
 3. **Notion 引导页（上游参考）**：<https://chuanban.notion.site/chuanban-antigravity-theme-patch-db7c5846f37546be9481cd791aed0554>
 
 ### 实机样式基准参考
@@ -59,9 +59,9 @@ chuanban-antigravity-theme/
 ├── README.md                   # 面向用户的项目说明与快速上手指南
 ├── CHANGELOG.md                # 版本演进记录
 ├── core/                       # 【只读内核】随版本升级原子替换，Agent 严禁直接修改
-│   ├── manifest.json           # 版本号（6.0.0）、平台声明（darwin）、资源地址与 core/* 四件套 SHA-256 校验清单
-│   ├── daemon.mjs              # macOS Node CDP 守护进程（运行时 core/manifest.json SHA-256 强校验、宿主独占指纹门禁、Browser 级 CDP 事件发现与 83% 轮询降频、SingletonLock 零子进程空闲短路、2.33.0+~2.34.0+ M2 冷启动自动接力重启、五态预设与 EN/中文跨窗口/Swarm 广播及 0600 原子持久化、SQLite O(1) 增量双语圆环胶囊与异步分片 Token 统计归因及 .cache/ 持久化索引、Swarm 子帧 ~100KB 载荷裁剪注入、2.5s 热重载感知）
-│   ├── runtime.js              # 浏览器端注入引擎（宿主指纹门禁与 0ms 防闪白、五段式外观主题与 `[ EN | 中文 ]` 二元语言零重刷切换、#ag-font-faces / #ag-custom-fonts / #ag-ui-widgets 三段拆分与 <1ms 原版旁路、Swarm 子帧原版底色清理还原、EN 态观察器零开销休眠、子 Agent / Swarm Worker 副栏翻译与 (12s) 耗时保护、指标胶囊 rAF 合批防重排、设置「本地扩展 → Token 统计」零噪观察器挂载）
+│   ├── manifest.json           # 版本号（6.0.1）、平台声明（darwin）、资源地址与 core/* 四件套 SHA-256 校验清单
+│   ├── daemon.mjs              # macOS Node CDP 守护进程（运行时 core/manifest.json SHA-256 强校验、宿主独占指纹门禁、Browser 级 CDP 事件发现与 83% 轮询降频、SingletonLock 零子进程空闲短路、2.33.0+~2.34.0+ M2 冷启动自动接力重启、五态预设与 EN/中文跨窗口/Swarm 广播及 0600 原子持久化、SQLite O(1) 增量双语圆环胶囊单飞合并同步与异步分片 Token 统计归因及 .cache/ 持久化索引、Swarm 子帧 ~100KB 载荷裁剪注入、2.5s 热重载感知）
+│   ├── runtime.js              # 浏览器端注入引擎（宿主指纹门禁与 0ms 防闪白、五段式外观主题与 `[ EN | 中文 ]` 二元语言零重刷切换、#ag-font-faces / #ag-custom-fonts / #ag-ui-widgets 三段拆分与 <1ms 原版旁路、Swarm 子帧原版底色清理还原、EN 态观察器零开销休眠、子 Agent / Swarm Worker 副栏翻译与 (12s) 耗时保护、指标胶囊订阅自愈/输入框单帧补挂/首轮采样占位与 rAF 合批防重排、设置「本地扩展 → Token 统计」零噪观察器挂载）
 │   ├── theme.css               # 五段式样式表（莫兰迪古典矿物默认视觉、烟岚石青/火漆单层 2px 合并输入框、零 :has() 侧栏实色底优化、`Absolutely！` 与双深色预设、圆环指标胶囊与 Token 统计面板）
 │   └── i18n.json               # 1,965 条零冲突标准 JSON 基准词典（挂载至 Object.create(null)）
 └── user/                       # 【用户改装层】升级 100% 保留，守护进程每 2.5s 检测 mtimeMs 热重载注入

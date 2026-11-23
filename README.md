@@ -1,6 +1,6 @@
-# 船板的 Antigravity 主题、字体与汉化补丁 (v6.0.0)
+# 船板的 Antigravity 主题、字体与汉化补丁 (v6.0.1)
 
-[![Version](https://img.shields.io/badge/version-6.0.0-3D6470.svg)](https://github.com/henrychou0312/chuanban-antigravity-theme)
+[![Version](https://img.shields.io/badge/version-6.0.1-3D6470.svg)](https://github.com/henrychou0312/chuanban-antigravity-theme)
 [![Antigravity](https://img.shields.io/badge/Antigravity-2.34.0%2B-3F6E7A.svg)](https://github.com/henrychou0312/chuanban-antigravity-theme)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.0.0%20(22.13%2B%20Full)-339933.svg)](https://nodejs.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://github.com/henrychou0312/chuanban-antigravity-theme)
@@ -12,7 +12,7 @@
 
 ---
 
-## ✨ 核心特性（v6.0.0 · macOS 专属安全加固版）
+## ✨ 核心特性（v6.0.1 · macOS 专属安全加固版）
 
 - **多套打磨风格自由切换**：内置温润耐看的**莫兰迪古典矿物风格**（默认）、深度打磨的**仿 Claude 书卷暖白风格（`Absolutely！`）**、护眼的**温润书卷夜间风格（`claude-warm`）**与深海冷碳深色模式（`onyx`），并支持在设置面板一键切回**官方原版风格（`A`）**（`<1ms` 硬件级旁路补丁配色与自定义字体）。
 - **母语级汉化与中英一键双切**：1,965 条零冲突词典覆盖主界面、15+ 设置子页、编排器模型档位与子 Agent / Swarm 副栏，严格隔离代码块、行内文件胶囊（`.inline-pill[data-uri]`）、Monaco 编辑器、终端与英文历史标题；外观面板提供独立 **`[ EN | 中文 ]`** 按钮，可随时一键零重刷退回纯英文原版界面（`EN` 态自动休眠文本观察器零开销）。
@@ -102,11 +102,11 @@ node ~/.gemini/antigravity/theme-patch/install.mjs verify
 
 > 如需临时卸载并即时还原原版界面，运行 `node ~/.gemini/antigravity/theme-patch/install.mjs uninstall`（保留 `~/.gemini/antigravity/theme-patch/user/` 配置并清理 `.cache/`）；如需退回上一版本内核，运行 `node ~/.gemini/antigravity/theme-patch/install.mjs rollback`。
 
-### 二、老用户升级至 v6.0.0
+### 二、老用户升级至 v6.0.1
 `node install.mjs install` 会自动备份旧版 `core/` 内核、将旧版默认浅色预设 `"high-contrast"` 平滑迁移至 `"morandi"`、刷新 LaunchAgent 常驻服务（并自动将 Homebrew/`fnm` Node 还原为稳定软链路径），同时完整保留 `~/.gemini/antigravity/theme-patch/user/` 中的个人自定义配置：
 
 > **💬 复制发给 Agent（老用户无缝升级）**：  
-> 请帮我拉取最新的 `https://github.com/henrychou0312/chuanban-antigravity-theme.git`（或读取最新解压目录），阅读其中的 `SKILL.md` 后直接运行 `node install.mjs install` 升级至 `v6.0.0` macOS 安全精简版（若我此前使用的是更早期的单文件版 `antigravity-font-daemon.mjs` 且有自定义字号/配色，请先帮我把自定义项迁移到 `~/.gemini/antigravity/theme-patch/user/`）。若安装后 `cdpStatus` 为 `"missing_opt_in_flag"` 且你正在 Antigravity 内部会话中运行，请勿直接中断当前对话，告诉我空闲时运行 `node ~/.gemini/antigravity/theme-patch/install.mjs relaunch`（或手动重开一次客户端）即可；端口已就绪则直接运行 `node install.mjs verify` 确认 `"ok": true`、`"themeStyle": true` 与 `"dictCount": 1965` 完成验收。
+> 请帮我拉取最新的 `https://github.com/henrychou0312/chuanban-antigravity-theme.git`（或读取最新解压目录），阅读其中的 `SKILL.md` 后直接运行 `node install.mjs install` 升级至 `v6.0.1` macOS 安全精简版（若我此前使用的是更早期的单文件版 `antigravity-font-daemon.mjs` 且有自定义字号/配色，请先帮我把自定义项迁移到 `~/.gemini/antigravity/theme-patch/user/`）。若安装后 `cdpStatus` 为 `"missing_opt_in_flag"` 且你正在 Antigravity 内部会话中运行，请勿直接中断当前对话，告诉我空闲时运行 `node ~/.gemini/antigravity/theme-patch/install.mjs relaunch`（或手动重开一次客户端）即可；端口已就绪则直接运行 `node install.mjs verify` 确认 `"ok": true`、`"themeStyle": true` 与 `"dictCount": 1965` 完成验收。
 
 ### 三、日常定制与排障话术
 - **🎨 切换风格、语言或微调字号**：日常切换 5 套风格与中英文可直接在「系统设置 → 外观界面」点击对应按钮并自动落盘；如需修改扩展预设（如 `"claude-desktop-purewhite"` / `"vintage-deep"`）、切换旧版全量指标胶囊（`"metricsMode": "full"`）或调大 `"--ag-chat-font-size"`，可让 Agent 按 `SKILL.md` 修改 `~/.gemini/antigravity/theme-patch/user/config.json`。
@@ -128,13 +128,15 @@ node ~/.gemini/antigravity/theme-patch/install.mjs verify
 | 入口 | 地址 | 说明 |
 | :--- | :--- | :--- |
 | **1. Google Drive 资源包（含字体）** | [**Google Drive 共享文件夹**](https://drive.google.com/drive/folders/1NX92SgVUqtSjWg6bt6sIJXy-cn7J_boC) | 含成品包与 4 个 macOS 必备字体文件：`AnthropicSerif-Regular/Bold.ttf`、`AnthropicMono-Regular.ttf`、`Sarasa-SuperTTC.ttc`（`v5.5.0+` UI 西文已直连官方 `Google Sans Flex`，无需 `AnthropicSans`；若 `Sarasa-SuperTTC.ttc` 遇网盘限流，可直接使用 `brew install --cask font-sarasa-gothic`）。 |
-| **2. GitHub 代码仓库** | [**henrychou0312/chuanban-antigravity-theme**](https://github.com/henrychou0312/chuanban-antigravity-theme) | macOS 专属安全精简版源码，包含预封装内核 `core/`、个人改装层 `user/`、生命周期 CLI `install.mjs`、[`SKILL.md`](https://github.com/henrychou0312/chuanban-antigravity-theme/blob/main/SKILL.md) 与 [`CHANGELOG.md`](CHANGELOG.md)（同步上游 [Anarcadia/chuanban-antigravity-theme-patch](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) `v6.0.0` macOS 适用更新并保留精简与安全加固）。 |
+| **2. GitHub 代码仓库** | [**henrychou0312/chuanban-antigravity-theme**](https://github.com/henrychou0312/chuanban-antigravity-theme) | macOS 专属安全精简版源码，包含预封装内核 `core/`、个人改装层 `user/`、生命周期 CLI `install.mjs`、[`SKILL.md`](https://github.com/henrychou0312/chuanban-antigravity-theme/blob/main/SKILL.md) 与 [`CHANGELOG.md`](CHANGELOG.md)（同步上游 [Anarcadia/chuanban-antigravity-theme-patch](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) `v6.0.1` macOS 适用更新并保留精简与安全加固）。 |
 | **3. Notion 引导页（上游参考）** | [**chuanban-antigravity-theme-patch**](https://chuanban.notion.site/chuanban-antigravity-theme-patch-db7c5846f37546be9481cd791aed0554) | 上游原作者图文说明与安装引导镜像页（实际部署请以本仓库 `README.md` 与 `SKILL.md` 为准）。 |
 
 ---
 
 ## 🕒 近期版本演进（完整记录见 [`CHANGELOG.md`](CHANGELOG.md)）
 
+- **v6.0.1（2026-11-23 · macOS 安全精简版同步上游 `v6.0.1`）**
+  - 同步上游 `v6.0.1` 实时指标胶囊自愈加固更新：新增订阅回执自愈重试与守护进程 `syncMetricsForSession` 单飞合并锁，彻底解决新建会话/跨窗切换偶发不显示指标问题；新增零流式开销输入框结构观察器，在 `Swarm` / Artifact 侧栏或权限卡触发 React 重建输入框时单帧自动补挂胶囊；新开会话首轮生成期间展示 `采样中…` / `Measuring…` 低干扰占位并在停笔瞬间（`100ms`）主动拉取 SQLite 指标，同时优先匹配 `conversation-view` 防止内层非 UUID 属性遮蔽。
 - **v6.0.0（2026-11-23 · macOS 安全精简版同步上游 `v6.0.0` 及后续修复 `29df839`）**
   - 完整同步上游 `v6.0.0` 全部 macOS 适用更新（直接忽略 Windows 专属变更），保留 macOS-only 精简与运行时安全加固：默认切换至全新**莫兰迪古典矿物风格（`morandi`）**与单层 `2px` 合并输入框（升级时 `"high-contrast"` 自动平滑迁移至 `"morandi"`）；外观面板升级为五段式胶囊 **`[ A | ✳️ | MO | 📖 | 🌙 ]`**（`<1ms` 硬件级原版配色旁路、`#ag-font-faces` 常驻防缺字、`📖 暖纸深色` 保留经典 Claude 暖炭配色）与独立 **`[ EN | 中文 ]`** 零重刷语言切换（`EN` 态观察器零开销休眠）；词典扩充至 **`1,965` 条**（补齐子 Agent / Swarm 副栏并修复 `(12s)` 耗时误伤）；指标胶囊升级为上下文圆环 + 精简 4 行中英双语悬停卡（可选 `"metricsMode": "full"` 切回全量行内显示）；清除 `body:has()` 与全局 `:nth-child():has()` 并加固外部配置变更广播与 `0600` 原子落盘。
 - **v5.5.5（2026-11-22 · macOS 安全精简版同步上游 `v5.5.1 ~ v5.5.5`）**
