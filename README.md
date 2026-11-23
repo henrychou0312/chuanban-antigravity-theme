@@ -135,3 +135,9 @@ node ~/.gemini/antigravity/theme-patch/install.mjs verify
 - **v5.1.3（2026-11-11）**：适配 Antigravity `2.31.0`，将 SQLite 指标读取与 DOM 汉化升级为 `O(1)` 增量引擎。
 - **v5.1.0（2026-11-10）**：确立浅色暖纸预设与深色官方碳黑物理隔离的昼夜双模式架构。
 - **v5.0.0（2026-11-04）**：确立「`core/` 只读内核 + `user/` `2.5s` 热重载改装层 + `install.mjs` 一键 CLI」模块化架构。
+
+---
+
+## 📄 开源协议
+
+本项目基于上游 [`Anarcadia/chuanban-antigravity-theme-patch`](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) 精简与安全加固，遵循 **[MIT License](LICENSE)** 开源许可协议。

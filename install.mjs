@@ -393,9 +393,9 @@ async function detectEnvironment(channel = 'auto') {
     nodeBasicOk,
     sqliteAvailable,
     tier: sqliteAvailable
-      ? 'FULL (>= 22.13, Theme + Google Sans Flex/Sarasa/Serif + i18n + SQLite Live Metrics)'
+      ? 'FULL (>= 22.13, Theme + Google Sans Flex/Sarasa/Serif + i18n + SQLite Live Metrics & Token Analytics)'
       : nodeBasicOk
-      ? 'STANDARD (22.0~22.12, Theme + Fonts + i18n; SQLite Metrics gracefully disabled)'
+      ? 'STANDARD (22.0~22.12, Theme + Fonts + i18n; SQLite Metrics & Token Analytics gracefully disabled)'
       : 'UNSUPPORTED (< 22.0, requires Node 22+)',
     hasAnthropicFont,
     hasAnthropicSerifFont,
