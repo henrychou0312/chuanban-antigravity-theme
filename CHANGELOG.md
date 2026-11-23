@@ -4,6 +4,38 @@
 
 ---
 
+## [v5.5.5-macos-hardened] - 2026-11-22
+
+> **适用平台**：仅限 **macOS（`darwin`）**（Antigravity `2.34.0+` / `2.33.x`，向下完全兼容 `2.32.x` / `2.31.x` / `2.30.0`）  
+> **变更定位**：同步上游 [`Anarcadia/chuanban-antigravity-theme-patch`](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) `v5.5.1 ~ v5.5.5` 全部 macOS 适用与跨平台更新（直接忽略 Windows 专属变更，完整保留 macOS-only 精简架构与运行时安全加固）
+
+### Added（系统设置「Token 统计」多维增量分析面板、Browser 级 CDP 事件发现与 MIT 开源协议）
+- **新增「系统设置 → 本地扩展 → Token 统计」多维增量分析面板与 `.cache/` 私有持久化索引（同步上游 `v5.5.3` / `v5.5.4`，含 #25、#28）**：
+  - 基于 Node.js `>= 22.13` 原生 `node:sqlite` 只读增量聚合本地 `conversations/*.db` 与 `conversation_summaries.db`，提供 4 口径 KPI、7/30/90/全部天时间窗、26 周贡献热力图、近 14 日堆叠趋势、具体模型/配额池（含 `2.34.0` `Carbon`/`Neon`/`Argon`/`Sonnet 5.5`）与 6 类工作场景（含新版 Orchestrator `step_type = 101` 规划态归因与收窄后的 `memory` 路径匹配）、父会话展开子 Agent 与低缓存命中率预警；
+  - 引入带 `TA_CACHE_SALT` 算法指纹校验的磁盘持久化索引 `.cache/token-analytics-index.json`（延续本仓库权限加固规范：`.cache/` `0700`、索引文件 `0600` 原子替换；空闲 10 分钟自动回收内存，`Shift` + 点击「刷新」强制全量重算，`uninstall` 自动清理 `.cache/`）；SQL 层通过 `CASE` 跳过占库体积 ~92% 的 `step_type = 132` 溢出页并对近 24h 活跃库采用 `WHERE idx >= ?` + 冻结前缀 `hex` 锚点增量追加；
+  - `user/config.json` 新增 `modules.tokenAnalytics: true` 开关，关闭时及 `plugin://swarm--` 子 `iframe` 动态剥离 ~100 KB CSS/JS 载荷。
+- **新增 Browser 级 CDP 事件驱动目标发现与冷启动重载防误拉黑（同步上游 `v5.5.2` / `v5.5.3`，含 #21、#22）**：
+  - 订阅 `Target.setDiscoverTargets` 将新开窗口、唤醒窗口与 Swarm 子帧发现注入压至毫秒级；在线态非心跳拍跳过 5/6 的 `/json/list` HTTP 轮询（降频 83%）；校验 `/json/version` 防止 `fallbackPort` 误连外部 Chrome/Edge；将 `about:` / `chrome-error:` / `data:` 识别为 `'pending'` 并统一接入有限退避复检，解决冷启动切端口重载误拉黑为 `non_host` 的问题。
+- **补充 MIT `LICENSE` 开源许可协议（同步上游 `v5.5.5`）**：
+  - 同步上游根目录 `LICENSE` 文件并纳入 `install.mjs pack` 发行打包清单。
+
+### Changed & Perf（Antigravity `2.34.0` 适配、`1,942` 条词典、macOS 稳定 Node 路径与双端渲染/守护降耗）
+- **适配 Antigravity `2.34.0` 双端界面漂移并将汉化词典扩充至 `1,942` 条（同步上游 `v5.5.3` / `v5.5.5`，含 #27）**：
+  - 修复 `.inline-pill[data-uri]` 行内文件胶囊误落衬线字体并纳入 `DEFAULT_EXCLUDE_I18N` 不可变排除域；还原非文件类 `.inline-pill` 的 `Google Sans Flex` UI 字体栈；将 `Quote` / `Comment` 收归交互控件上下文门禁防误译；
+  - 支持 `2.34.0` 无括号模型努力度档位（如 `Gemini 4 Neon Extra High` → `Gemini 4 Neon · 超高`）与 `…`/`...` 省略号双向回退匹配；新增 82 条词条（含 2 条编排器文案与 Swarm 状态词条）；补齐内置浏览器三层打孔选择器（`:not([data-has-three-layer-browser-hole="true"])`）与 `O(1)` `:not([data-has-browser-hole="true"])`；
+  - 宿主 `#agy-new-themes-fonts` 或原生 Google Fonts 链接就绪后自动移除重复保底 `#ag-google-sans-flex-fonts`（支持 `modules.googleFonts: false`）。
+- **macOS Homebrew / `fnm` 稳定 Node 软链解析（同步上游 `v5.5.2`，修复 #20）**：
+  - `install.mjs` 新增 `resolveStableNodeExecPath()`，经 `fs.realpathSync` 同实体校验后将 Homebrew 版本化 `Cellar` 路径与 `fnm` 默认别名还原为稳定软链写入 LaunchAgent `.plist`（并在 `doctor` 输出 `node.serviceExecPath`），彻底避免 `brew upgrade node && brew cleanup` 后守护进程失效；`detectEnvironment` 字体匹配同步兼容繁体 `更紗`。
+- **守护进程空闲零子进程短路、异常落盘与渲染器热路径减负（同步上游 `v5.5.2 ~ v5.5.5`，含 #30、#32）**：
+  - macOS 空闲期改用 `SingletonLock` 软链 PID 存活预检替代每 `2.5s` 派生 `ps` 子进程；`hasActiveConversationWalWrite` 增加 `procBirthMs` 过滤防止上一轮残留 `.db-wal` 误拦截 M2 冷启动接力；`refreshLineageIndex` 自动将 5 分钟以上历史空库移出高频轮询队列；
+  - 新增 `uncaughtExceptionMonitor`、非零退出码旁路日志与守护启动状态记录（写入 `0600` 私有日志），支持 `--keep-alive` 健康检查短路（仅在确认接管时执行 fail-closed SHA-256 校验与 bundle 构建）；
+  - 清零 `core/theme.css` 末尾 `*` 通配符并以 `:where(...)` / 层叠特异度替代 8 重 `:not(*)` 与蜡封 `:not(:has(...))` 反向重算；`core/runtime.js` 新增 `syncChuanbanPreset()` 签名短路、`__ag_appearance_toggle_observer` 对话正文子树跳过、`__ag_i18n_observer` 自写入 `O(1)` 短路、指标胶囊 `requestAnimationFrame` 合批复测与热力图 Tooltip 悬停动态挂/卸监听器。
+
+### Ignored（Windows 专属变更）
+- 依据本仓库 macOS-only 定位，已直接忽略上游 `v5.5.2 ~ v5.5.5` 中的 Windows 专属代码（`SuperTTC` 拆分字体退订与注册表清理、WSL2 异步探测与 P9 UNC 暂存、Windows 计划任务 `TimeTrigger` / `keepAliveTask` / `.lnk` 快捷方式修复与 `detached spawn` CWD 补丁），以及本仓库精简后已不存在对应变量的 `v5.5.1` `lastBestEffortPayloadCache` TDZ 补丁。
+
+---
+
 ## [v5.5.0-macos-hardened] - 2026-11-19
 
 > **适用平台**：仅限 **macOS（`darwin`）**（Antigravity `2.33.0+`，向下完全兼容 `2.32.x` / `2.31.x` / `2.30.0`）  

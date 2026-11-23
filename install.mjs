@@ -114,7 +114,7 @@ function buildManifest(baseDir = __dirname) {
   }
   const manifest = {
     name: 'chuanban-antigravity-theme-patch',
-    version: '5.5.0',
+    version: '5.5.5',
     platform: 'darwin',
     minNodeVersion: '22.0.0',
     fullMetricsNodeVersion: '22.13.0',
@@ -140,6 +140,7 @@ function buildDistZip(baseDir = __dirname) {
   if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
 
   const includeItems = [
+    'LICENSE',
     'SKILL.md',
     'README.md',
     'CHANGELOG.md',
@@ -330,11 +331,11 @@ async function detectEnvironment(channel = 'auto') {
     } catch {}
   }
 
-  // v5.5.0 UI 西文直连官方 Google Sans Flex 引擎，本地仅需 Anthropic Serif（对话正文）+ Anthropic Mono（代码）+ Sarasa（中文）
+  // v5.5.0+ UI 西文直连官方 Google Sans Flex 引擎，本地仅需 Anthropic Serif（对话正文）+ Anthropic Mono（代码）+ Sarasa（中文）
   const hasAnthropicSerifFont = allFontFiles.some((f) => /AnthropicSerif|Anthropic[ _-]Serif/i.test(f));
   const hasAnthropicMonoFont = allFontFiles.some((f) => /AnthropicMono|Anthropic[ _-]Mono/i.test(f));
   const hasAnthropicFont = hasAnthropicSerifFont && hasAnthropicMonoFont;
-  const hasSarasaFont = allFontFiles.some((f) => /Sarasa|更纱/i.test(f));
+  const hasSarasaFont = allFontFiles.some((f) => /Sarasa|更纱|更紗/i.test(f));
 
   const checkSingleChannel = (ch) => {
     const isInsiders = ch === 'insiders';
@@ -828,9 +829,9 @@ function ensureCdpLaunchers(channel = 'auto', options = {}) {
         '  <key>CFBundlePackageType</key>',
         '  <string>APPL</string>',
         '  <key>CFBundleShortVersionString</key>',
-        '  <string>5.5.0</string>',
+        '  <string>5.5.5</string>',
         '  <key>CFBundleVersion</key>',
-        '  <string>550</string>',
+        '  <string>555</string>',
         ...(iconBase ? ['  <key>CFBundleIconFile</key>', `  <string>${iconBase}</string>`] : []),
         '  <key>LSMinimumSystemVersion</key>',
         '  <string>12.0</string>',
@@ -918,6 +919,7 @@ async function runDoctor() {
     node: {
       version: env.nodeVer,
       execPath: process.execPath,
+      serviceExecPath: resolveStableNodeExecPath(),
       tier: env.tier
     },
     fonts: {
@@ -1131,8 +1133,60 @@ function removeSystemService() {
   }
 }
 
+function resolveStableNodeExecPath(execPath = process.execPath, home = os.homedir()) {
+  let realExec = '';
+  try {
+    realExec = fs.realpathSync(execPath);
+  } catch {
+    return execPath;
+  }
+
+  const dynamicCellarCandidates = [];
+  for (const probePath of [execPath, realExec]) {
+    const m = String(probePath || '').match(/^(.*)\/Cellar\/([^/]+)\/[^/]+\/bin\/(node)$/i);
+    if (m) {
+      const brewPrefix = m[1];
+      const formula = m[2];
+      const binName = m[3];
+      dynamicCellarCandidates.push(path.join(brewPrefix, 'bin', binName));
+      dynamicCellarCandidates.push(path.join(brewPrefix, 'opt', formula, 'bin', binName));
+    }
+  }
+
+  const envExtra = process.env.AG_STABLE_NODE_CANDIDATES
+    ? String(process.env.AG_STABLE_NODE_CANDIDATES)
+        .split(path.delimiter)
+        .map((s) => s.trim())
+        .filter(Boolean)
+    : [];
+
+  const staticCandidates = [
+    '/opt/homebrew/bin/node',
+    '/usr/local/bin/node',
+    '/opt/homebrew/opt/node/bin/node',
+    '/usr/local/opt/node/bin/node',
+    '/opt/homebrew/opt/node@22/bin/node',
+    '/opt/homebrew/opt/node@24/bin/node',
+    path.join(home, 'Library', 'Application Support', 'fnm', 'aliases', 'default', 'bin', 'node'),
+    path.join(home, '.local', 'share', 'fnm', 'aliases', 'default', 'bin', 'node')
+  ];
+
+  const seen = new Set();
+  for (const cand of [...envExtra, ...dynamicCellarCandidates, ...staticCandidates]) {
+    if (!cand || seen.has(cand)) continue;
+    seen.add(cand);
+    try {
+      if (fs.existsSync(cand) && fs.realpathSync(cand) === realExec) {
+        return cand;
+      }
+    } catch {}
+  }
+  return execPath;
+}
+
 function registerSystemService(wrapperDaemon, targetDir) {
   const home = os.homedir();
+  const serviceNodeExec = resolveStableNodeExecPath();
   const launchAgentsDir = path.join(home, 'Library', 'LaunchAgents');
   fs.mkdirSync(launchAgentsDir, { recursive: true });
   const logsDir = path.join(targetDir, 'logs');
@@ -1155,7 +1209,7 @@ function registerSystemService(wrapperDaemon, targetDir) {
     <string>${label}</string>
     <key>ProgramArguments</key>
     <array>
-        <string>${process.execPath}</string>
+        <string>${serviceNodeExec}</string>
         <string>--disable-warning=ExperimentalWarning</string>
         <string>${wrapperDaemon}</string>
     </array>
@@ -1227,7 +1281,7 @@ function registerSystemService(wrapperDaemon, targetDir) {
     }
     if (!runningNow) runningNow = queryServiceState().loaded;
   } catch {}
-  return { platform: 'darwin', serviceFile: activePlist, label, runningNow };
+  return { platform: 'darwin', serviceFile: activePlist, label, nodeExec: serviceNodeExec, runningNow };
 }
 
 async function runInstall() {
@@ -1349,6 +1403,7 @@ async function runInstall() {
   for (const modKey of [
     'i18n',
     'metrics',
+    'tokenAnalytics',
     'composerWaxSeal',
     'deadlockHealer',
     'coldBootHealer',
@@ -1773,6 +1828,10 @@ async function runUninstall() {
   const realDaemon = path.join(targetDir, 'core', 'daemon.mjs');
 
   if (isCustomSandboxTarget) {
+    const localCacheDir = path.join(targetDir, '.cache');
+    try {
+      if (fs.existsSync(localCacheDir)) fs.rmSync(localCacheDir, { recursive: true, force: true });
+    } catch {}
     console.log(`[Uninstall] Cleaned custom sandbox target (${targetDir}); global daemon and services were left untouched.`);
     return;
   }
@@ -1781,6 +1840,10 @@ async function runUninstall() {
   removeSystemService();
   stopRunningDaemonProcesses();
   removeCdpLaunchers();
+  try {
+    const cacheDir = path.join(targetDir, '.cache');
+    if (fs.existsSync(cacheDir)) fs.rmSync(cacheDir, { recursive: true, force: true });
+  } catch {}
 
   // 2. 在无后台守护进程干扰的纯净状态下，向打开的窗口发送一次禁用还原载荷，即时卸载样式并恢复英文原貌
   if (fs.existsSync(userConfigPath) && fs.existsSync(realDaemon)) {

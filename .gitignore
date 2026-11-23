@@ -1,4 +1,5 @@
 dist/
+.cache/
 logs/
 backups/
 core.prev/

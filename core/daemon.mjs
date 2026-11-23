@@ -2,10 +2,10 @@
 /**
  * chuanban-antigravity-theme-patch · macOS CDP Theme & Live Metrics Daemon (core/daemon.mjs)
  *
- * 架构特性（v5.5.0 · macOS 专属）：
+ * 架构特性（v5.5.5 · macOS 专属）：
  * 1. 动态 Node 分级：
- *    - Node >= 22.0：完整启用昼夜双模式独立主题（暖纸浅色三预设 + 深色 onyx / claude-warm 双预设）、Google Sans Flex 原生西文引擎 × 更纱黑体 UI 精密字重桥接 + Anthropic Serif 正文、输入框三态、1860条母语级汉化、宿主独占指纹门禁、死锁与冷启动兜底包自愈及 2.33.0+ CDP Opt-in 自动接力（M2）。
- *    - Node >= 22.13：动态 `await import('node:sqlite')` 解锁底部实时会话指标胶囊（O(1) 增量尾行解析）；低版本优雅降级绝不崩溃。
+ *    - Node >= 22.0：完整启用昼夜双模式独立主题（暖纸浅色三预设 + 深色 onyx / claude-warm 双预设）、Google Sans Flex 原生西文引擎 × 更纱黑体 UI 精密字重桥接 + Anthropic Serif 正文、输入框三态、1942条母语级汉化、宿主独占指纹门禁、死锁与冷启动兜底包自愈、Browser 级 CDP 事件发现及 2.33.0+ ~ 2.34.0+ CDP Opt-in 自动接力（M2 · SingletonLock 零子进程空闲短路）。
+ *    - Node >= 22.13：动态 `await import('node:sqlite')` 解锁底部实时会话指标胶囊（O(1) 增量尾行解析）与「系统设置 → Token 统计」多维增量归因分析；低版本优雅降级绝不崩溃。
  * 2. 模块化与热重载：
  *    - 周期性检测 `user/config.json`、`user/custom.css`、`user/i18n.override.json` 的 mtime，
  *      用户或对方 Agent 修改 `user/` 层后 2.5 秒内自动重新构建签名并热更新至所有打开的 Antigravity 窗口。
@@ -21,6 +21,7 @@ import path from 'node:path';
 import os from 'node:os';
 import http from 'node:http';
 import crypto from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -34,6 +35,7 @@ const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const CORE_DIR = path.join(ROOT_DIR, 'core');
 const USER_DIR = path.join(ROOT_DIR, 'user');
+const CACHE_DIR = path.join(ROOT_DIR, '.cache');
 
 // ============================================================================
 // 0. 动态探测 node:sqlite（Node >= 22.13 自动解锁，低版本优雅降级）
@@ -63,6 +65,7 @@ function getArg(flag, fallback = null) {
 
 const SAFE_MODE = hasFlag('--safe-mode');
 const RUN_ONCE = hasFlag('--once');
+const KEEP_ALIVE_ONLY = hasFlag('--keep-alive') || hasFlag('--if-not-running');
 const CLI_CHANNEL = getArg('--channel', null);
 
 function readJsonSafe(filePath, fallback = {}) {
@@ -196,10 +199,14 @@ function resolveChannelPaths(singleChannel = 'stable', userCfg = {}) {
     fs.existsSync(portFile) || fs.existsSync(path.dirname(defaultPortFile)) || fs.existsSync(dotDir);
   const primaryConvDir = getArg('--conversations-dir', userCfg.conversationsDir || '') || defaultConvDir;
 
+  const customFallbackPort =
+    Number(userCfg.fallbackPort) > 0 ? Number(userCfg.fallbackPort) : Number(userCfg.port) > 0 ? Number(userCfg.port) : 0;
+
   return {
     channel: singleChannel,
     portFile,
-    fallbackPort: Number(userCfg.fallbackPort) > 0 ? Number(userCfg.fallbackPort) : fallbackPort,
+    geminiSubDir,
+    fallbackPort: customFallbackPort || fallbackPort,
     channelInstalled,
     conversationsDir: primaryConvDir
   };
@@ -224,13 +231,22 @@ function resolveActiveChannelEndpoints(channelMode = 'auto', userCfg = {}) {
 // ============================================================================
 // 2. 动态构建注入载荷（支持 core/ + user/ 实时合并与热更新签名）
 // ============================================================================
-const BASE_VERSION = '20261119-v5.5.0';
+const BASE_VERSION = '20261122-v5.5.5';
 let cachedBundleSig = '';
 let cachedInjectScript = '';
+let cachedIframeInjectScript = '';
 let cachedPatchVersion = '';
 let metricsConfigEpoch = 0;
 const metricsCache = new Map(); // dbPath -> { sig, payload }
 const incrementalMetricsMap = new Map(); // dbPath -> { rowCount, maxIdx, userStepsCount, lastUserStepIdx, items, validItems, totalIn, totalCache, totalOut, totalThink, totalResp }
+const tokenAnalyticsDbCache = new Map(); // dbPath -> { sig, parsed, _inc }
+const tokenAnalyticsSummariesCache = new Map(); // summariesDbPath -> { sig, map }
+let lastTokenAnalyticsAccessMs = 0;
+let tokenAnalyticsDiskLoaded = false;
+let tokenAnalyticsPersistTimer = null;
+let tokenAnalyticsLastJsonCache = { dataRef: null, jsonStr: '' };
+let inFlightTokenAnalyticsPromise = null;
+let inFlightTokenAnalyticsKey = '';
 const MAX_METRICS_CACHE_SIZE = 30;
 
 function setMetricsCache(dbPath, entry) {
@@ -264,6 +280,7 @@ let activeConfig = {
   modules: {
     i18n: true,
     metrics: true,
+    tokenAnalytics: true,
     composerWaxSeal: true,
     deadlockHealer: true,
     coldBootHealer: true,
@@ -429,7 +446,7 @@ function rebuildBundleIfNeeded() {
   const sig =
     [...coreFiles, ...userFiles].map(getFileMtimeSig).join('|') +
     `|hostTheme:${hostThemeMode || ''}|safe:${SAFE_MODE}|cli:${CLI_CHANNEL || ''}`;
-  if (coreIntegrityOk && sig === cachedBundleSig && cachedInjectScript) {
+  if (coreIntegrityOk && sig === cachedBundleSig && cachedInjectScript && cachedIframeInjectScript) {
     return false;
   }
 
@@ -437,6 +454,7 @@ function rebuildBundleIfNeeded() {
   if (!integrity.ok) {
     coreIntegrityOk = false;
     cachedInjectScript = '';
+    cachedIframeInjectScript = '';
     cachedBundleSig = '';
     const errKey = integrity.reason || JSON.stringify(integrity.mismatches || []);
     if (errKey !== lastIntegrityErrKey) {
@@ -485,11 +503,14 @@ function rebuildBundleIfNeeded() {
     {
       i18n: true,
       metrics: true,
+      tokenAnalytics: true,
       composerWaxSeal: true,
       deadlockHealer: true,
       coldBootHealer: true,
       zoomShortcuts: true,
       cdpAutoRelaunch: true,
+      cdpEventDiscovery: true,
+      googleFonts: true,
       customCss: true
     },
     rawModules
@@ -497,6 +518,7 @@ function rebuildBundleIfNeeded() {
   delete modules.customJs;
   if (!DatabaseSync) {
     modules.metrics = false;
+    modules.tokenAnalytics = false;
   }
   modules.metricsCapsule = modules.metrics;
 
@@ -537,6 +559,22 @@ function rebuildBundleIfNeeded() {
     !normalizedSelectors.excludeI18n.includes('ag-live-metrics-pill')
   ) {
     normalizedSelectors.excludeI18n += ', .ag-live-metrics-pill, [data-ag-metrics-pill]';
+  }
+  if (
+    typeof normalizedSelectors.excludeI18n === 'string' &&
+    normalizedSelectors.excludeI18n.trim() &&
+    !normalizedSelectors.excludeI18n.includes('data-uri^=')
+  ) {
+    normalizedSelectors.excludeI18n +=
+      ', [data-uri^="file:"], [data-uri^="vscode-"], a.inline-pill[href^="file:"], a.inline-pill[href^="vscode-"]';
+  }
+  if (
+    typeof normalizedSelectors.excludeI18n === 'string' &&
+    normalizedSelectors.excludeI18n.trim() &&
+    !normalizedSelectors.excludeI18n.includes('ag-token-analytics-panel')
+  ) {
+    normalizedSelectors.excludeI18n +=
+      ', #ag-token-nav-section, #ag-token-analytics-panel, #ag-ta-tooltip, [data-ag-token-ui]';
   }
 
   const DEFAULT_ALLOWED_ORIGINS = [
@@ -607,13 +645,21 @@ function rebuildBundleIfNeeded() {
   const channelTag = channel === 'insiders' ? 'insiders' : 'stable';
   cachedPatchVersion = `${BASE_VERSION}-${channelTag}-${hash}`;
 
+  const RE_STRIP_TA_CSS = /\/\* __AG_TOKEN_ANALYTICS_CSS_START__ \*\/[\s\S]*?\/\* __AG_TOKEN_ANALYTICS_CSS_END__ \*\//g;
+  const RE_STRIP_TA_JS = /\/\* __AG_TOKEN_ANALYTICS_JS_START__ \*\/[\s\S]*?\/\* __AG_TOKEN_ANALYTICS_JS_END__ \*\//g;
+
+  const pageCss = modules.tokenAnalytics ? baseCss : baseCss.replace(RE_STRIP_TA_CSS, '');
+  const pageRuntime = modules.tokenAnalytics
+    ? runtimeTemplate
+    : runtimeTemplate.replace(RE_STRIP_TA_JS, '  cleanupTokenAnalyticsDom();');
+
   const bootPayload = {
     version: cachedPatchVersion,
     hostThemeMode,
     enabled,
     preset,
     darkPreset,
-    cssText: baseCss,
+    cssText: pageCss,
     customCss,
     themeVars,
     darkThemeVars,
@@ -633,7 +679,21 @@ function rebuildBundleIfNeeded() {
     }
   };
 
-  cachedInjectScript = runtimeTemplate.replace('})(__AG_BOOT_PAYLOAD__);', () => `})(${JSON.stringify(bootPayload)});`);
+  cachedInjectScript = pageRuntime.replace('})(__AG_BOOT_PAYLOAD__);', () => `})(${JSON.stringify(bootPayload)});`);
+
+  // Swarm 等跨进程子 iframe 永不承载设置弹窗，固定裁剪 Token 统计 CSS+JS（单 iframe 立减 ~100 KB，且保持同一 version 哈希）
+  const iframeCss = baseCss.replace(RE_STRIP_TA_CSS, '');
+  const iframeRuntime = runtimeTemplate.replace(RE_STRIP_TA_JS, '');
+  const iframeModules = Object.assign({}, modules, { tokenAnalytics: false });
+  const iframePayload = Object.assign({}, bootPayload, {
+    cssText: iframeCss,
+    modules: iframeModules,
+    config: Object.assign({}, bootPayload.config, { modules: iframeModules })
+  });
+  cachedIframeInjectScript = iframeRuntime.replace(
+    '})(__AG_BOOT_PAYLOAD__);',
+    () => `})(${JSON.stringify(iframePayload)});`
+  );
   cachedBundleSig = sig;
   return true;
 }
@@ -645,6 +705,11 @@ const attachedTargets = new Map();
 const targetThemeModes = new Map();
 const targetDarkPresets = new Map();
 const targetMetaMap = new Map();
+const skippedNonHostTargets = new Map(); // targetId -> { origin, skippedAt, attempts, titleHadAg }
+const browserWatchers = new Map(); // `${channel}:${port}` -> { ws, wsUrl, port, channel, endpoint, reconnectAfterMs, closing }
+const browserWatcherBackoffUntil = new Map(); // `${channel}:${port}` -> timestamp ms
+const attachingTargetIds = new Set();
+const destroyedWhileAttaching = new Set();
 
 const DAEMON_LOG_FILE = path.join(os.tmpdir(), 'ag-theme-daemon.log');
 let daemonLogModeTightened = false;
@@ -672,9 +737,27 @@ function logDaemonEvent(msg) {
   } catch {}
 }
 
-if (!rebuildBundleIfNeeded() || !coreIntegrityOk || !cachedInjectScript) {
-  console.error('[Antigravity Daemon] Refusing to start: core/manifest.json SHA-256 verification failed. Run `node install.mjs install` or `node install.mjs build-manifest` to restore trusted core files.');
-  process.exit(1);
+// 记录致命异常（含未处理的 Promise rejection）与非零退出码，便于排查 daemon 意外退出；
+// 使用 uncaughtExceptionMonitor 仅旁路观测，不改变 Node 默认的崩溃退出语义
+process.on('uncaughtExceptionMonitor', (err, origin) => {
+  logDaemonEvent(`FATAL ${origin}: ${err?.stack || err}`);
+});
+process.on('exit', (code) => {
+  if (code) logDaemonEvent(`Process exiting with code ${code}`);
+});
+
+function ensureVerifiedBundleOrExit() {
+  if (!rebuildBundleIfNeeded() || !coreIntegrityOk || !cachedInjectScript) {
+    console.error(
+      '[Antigravity Daemon] Refusing to start: core/manifest.json SHA-256 verification failed. Run `node install.mjs install` or `node install.mjs build-manifest` to restore trusted core files.'
+    );
+    process.exit(1);
+  }
+}
+
+// --keep-alive 健康检查在 daemon 存活时会在下方 PID 锁段直接 exit(0)，无需预先构建注入 bundle
+if (!KEEP_ALIVE_ONLY) {
+  ensureVerifiedBundleOrExit();
 }
 
 function sleepSync(ms) {
@@ -762,15 +845,19 @@ function shutdownDaemon(reason, unlinkStopFile = false) {
     } catch {}
   }
   logDaemonEvent(reason);
+  closeAllBrowserWatchers();
   for (const [, entry] of attachedTargets.entries()) {
     try {
       entry.ws.close();
     } catch {}
   }
   attachedTargets.clear();
+  attachingTargetIds.clear();
+  destroyedWhileAttaching.clear();
   targetThemeModes.clear();
   targetDarkPresets.clear();
   targetMetaMap.clear();
+  skippedNonHostTargets.clear();
   process.exit(0);
 }
 
@@ -844,10 +931,20 @@ function checkPidFileOwnership() {
 
 if (!RUN_ONCE) {
   try {
+    let prevPid = 0;
+    let prevPidState = 'none';
     if (fs.existsSync(PID_FILE)) {
       const { pid: oldPid, stopRequested } = parsePidFile(PID_FILE);
+      prevPid = oldPid;
+      prevPidState = stopRequested ? 'stop-requested' : 'self-or-empty';
       if (!stopRequested && oldPid > 0 && oldPid !== process.pid) {
-        if (checkDaemonPidState(oldPid) === 'confirmed') {
+        const pidState = checkDaemonPidState(oldPid);
+        prevPidState = pidState;
+        if (KEEP_ALIVE_ONLY) {
+          if (pidState === 'confirmed') {
+            process.exit(0);
+          }
+        } else if (pidState === 'confirmed') {
           let killed = false;
           try {
             process.kill(oldPid, 'SIGTERM');
@@ -870,8 +967,15 @@ if (!RUN_ONCE) {
         }
       }
     }
+    // --keep-alive 确认原 daemon 已退出并准备接管前，强制完成 SHA-256 完整性门禁与 bundle 构建
+    if (KEEP_ALIVE_ONLY) {
+      ensureVerifiedBundleOrExit();
+    }
     writePrivateFileSync(PID_FILE, MY_PID_PAYLOAD, 'utf8', 0o600);
     armPidWatcher();
+    logDaemonEvent(
+      `Daemon started (${BASE_VERSION}, ${KEEP_ALIVE_ONLY ? 'via --keep-alive' : 'direct start'}); previous PID ${prevPid || 'none'} [${prevPidState}]`
+    );
     const cleanPid = () => {
       if (pidWatcher) {
         try {
@@ -888,70 +992,94 @@ if (!RUN_ONCE) {
     };
     process.on('exit', cleanPid);
     process.on('SIGINT', () => {
+      daemonExiting = true;
+      closeAllBrowserWatchers();
       cleanPid();
       process.exit(0);
     });
     process.on('SIGTERM', () => {
+      daemonExiting = true;
+      closeAllBrowserWatchers();
       cleanPid();
       process.exit(0);
     });
   } catch (err) {
     logDaemonEvent(`PID lock init warning: ${err?.message || err}`);
   }
+} else if (KEEP_ALIVE_ONLY) {
+  ensureVerifiedBundleOrExit();
 }
 
 // ============================================================================
 // 4. SQLite + Protobuf 实时会话指标解析器（读取 ~/.gemini/antigravity/conversations/<id>.db）
 // ============================================================================
 
-function parseProto(buf) {
+function parseProtoAll(buf, tolerant = false) {
+  const fields = [];
+  if (!buf || typeof buf.length !== 'number' || buf.length === 0) return fields;
   let i = 0;
-  const out = new Map();
-  while (i < buf.length) {
+  const n = buf.length;
+  while (i < n) {
     let tag = 0;
     let shift = 0;
-    while (i < buf.length) {
+    while (i < n) {
       const b = buf[i++];
       tag |= (b & 0x7f) << shift;
       if (!(b & 0x80)) break;
       shift += 7;
+      if (shift > 35) return fields;
     }
     const fn = tag >>> 3;
     const wt = tag & 7;
     if (fn <= 0 || fn > 10000) break;
     if (wt === 0) {
       let val = 0;
-      let s = 0;
-      while (i < buf.length) {
+      let m = 1;
+      while (i < n) {
         const b = buf[i++];
-        val += (b & 0x7f) * Math.pow(2, s);
+        val += (b & 0x7f) * m;
         if (!(b & 0x80)) break;
-        s += 7;
+        m *= 128;
+        if (m > 2 ** 64) return fields;
       }
-      out.set(fn, val);
+      fields.push({ f: fn, w: 0, v: val });
     } else if (wt === 2) {
       let len = 0;
       let s = 0;
-      while (i < buf.length) {
+      while (i < n) {
         const b = buf[i++];
         len |= (b & 0x7f) << s;
         if (!(b & 0x80)) break;
         s += 7;
+        if (s > 35) return fields;
       }
-      if (len < 0 || i + len > buf.length) break;
-      out.set(fn, buf.subarray(i, i + len));
+      if (len < 0 || i + len > n) {
+        if (tolerant && i < n) {
+          fields.push({ f: fn, w: 2, buf: buf.subarray(i), partial: true });
+        }
+        break;
+      }
+      fields.push({ f: fn, w: 2, buf: buf.subarray(i, i + len) });
       i += len;
     } else if (wt === 1) {
-      if (i + 8 > buf.length) break;
-      out.set(fn, buf.subarray(i, i + 8));
+      if (i + 8 > n) break;
+      fields.push({ f: fn, w: 1, buf: buf.subarray(i, i + 8) });
       i += 8;
     } else if (wt === 5) {
-      if (i + 4 > buf.length) break;
-      out.set(fn, buf.subarray(i, i + 4));
+      if (i + 4 > n) break;
+      fields.push({ f: fn, w: 5, buf: buf.subarray(i, i + 4) });
       i += 4;
     } else {
       break;
     }
+  }
+  return fields;
+}
+
+function parseProto(buf) {
+  const out = new Map();
+  for (const fld of parseProtoAll(buf, false)) {
+    out.set(fld.f, fld.w === 0 ? fld.v : fld.buf);
   }
   return out;
 }
@@ -995,20 +1123,27 @@ function readUtf8(val) {
   return '';
 }
 
-function getDbStatByPath(dbPath) {
+function getSqliteFileSig(dbPath) {
   try {
     const st = fs.statSync(dbPath, { throwIfNoEntry: false });
     if (!st) return null;
     const wst = fs.statSync(`${dbPath}-wal`, { throwIfNoEntry: false });
+    const baseSig = `${st.mtimeMs}:${st.size}`;
     const walSig = wst ? `${wst.mtimeMs}:${wst.size}` : '0:0';
     return {
       dbPath,
+      baseSig,
+      walSize: wst ? wst.size || 0 : 0,
       mtimeMs: Math.max(st.mtimeMs || 0, wst ? wst.mtimeMs || 0 : 0),
-      sig: `${st.mtimeMs}:${st.size}|${walSig}`
+      sig: `${baseSig}|${walSig}`
     };
   } catch {
     return null;
   }
+}
+
+function getDbStatByPath(dbPath) {
+  return getSqliteFileSig(dbPath);
 }
 
 function resolveConversationDbPath(cascadeId, endpointOrDir) {
@@ -1238,6 +1373,9 @@ function refreshLineageIndex(conversationsDir) {
         if (statInfo.sig !== prevSig && !dirState.unindexedSet.has(uuid)) {
           newlyChanged.push({ uuid, dbPath, mtimeMs: statInfo.mtimeMs, statSig: statInfo.sig });
           dirState.unindexedSet.add(uuid);
+        } else if (statInfo.sig === prevSig && nowMs - statInfo.mtimeMs >= 300000) {
+          // 超过 5 分钟仍未写入 trajectory_metadata 的历史空库移出高频轮询队列（后续若产生新 -wal 仍由 dirChanged 自动捕获）
+          dirState.noMetaPending.delete(uuid);
         }
       }
       if (newlyChanged.length > 0) {
@@ -1283,7 +1421,7 @@ function refreshLineageIndex(conversationsDir) {
           rootId: '',
           statSig: item.statSig
         });
-        if (!res.permanentInvalid) {
+        if (!res.permanentInvalid && Date.now() - item.mtimeMs < 300000) {
           rememberNoMetaPending(dirState, item.uuid, item.statSig);
           dirState.lastPendingScanAt = Date.now();
         } else {
@@ -1825,9 +1963,1285 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
 }
 
 // ============================================================================
+// 4.5 SQLite 全量增量 Token 统计分析（系统设置弹窗「Token 统计」Tab）
+// ============================================================================
+
+const TA_MEM_FILE_RE = /(?:^|\/)MEMORY\.md$|\/\.gemini\/antigravity\/knowledge\/|\/memories\//i;
+const TA_SLUG_LABELS = {
+  'gemini-pro-orchestrator': 'Orchestrator (Carbon)',
+  'gemini-pro-orchestrator-neon': 'Orchestrator (Neon)',
+  'gemini-pro-orchestrator-g1-pro': 'Orchestrator (Argon)',
+  'gemini-pro-orchestrator-argon': 'Orchestrator (Argon)',
+  'gemini-pro-orchestrator-carbon': 'Orchestrator (Carbon)',
+  'gemini-flash-worker-agy': 'Gemini 4 Hydrogen (Orchestrator)',
+  'gemini-4-hydrogen': 'Gemini 4 Hydrogen',
+  'gemini-4-hydrogen-tiered-high': 'Gemini 4 Hydrogen (High)',
+  'gemini-4-argon': 'Gemini 4 Argon',
+  'gemini-4-argon-trial': 'Gemini 4 Argon',
+  'gemini-4-carbon': 'Gemini 4 Carbon',
+  'gemini-4-neon': 'Gemini 4 Neon',
+  'gemini-3.8-flash-n': 'Gemini 3.8 Flash',
+  'gemini-3.8-flash-tiered': 'Gemini 3.8 Flash',
+  'claude-sonnet-5-5': 'Claude Sonnet 5.5',
+  'claude-sonnet-5-5-medium': 'Claude Sonnet 5.5 (Medium)',
+  'claude-sonnet-5-5-high': 'Claude Sonnet 5.5 (High)',
+  'claude-opus-4-6-thinking': 'Claude Opus 4.6 (Thinking)',
+  'claude-opus-5-5-medium': 'Claude Opus 5.5 (Medium)',
+  'claude-opus-5-5-high': 'Claude Opus 5.5 (High)',
+  'gpt-oss-120b-medium': 'GPT-OSS 120B (Medium)'
+};
+
+const TA_CACHE_SCHEMA_REV = 3;
+const TA_CACHE_FILE = path.join(CACHE_DIR, 'token-analytics-index.json');
+const TA_CACHE_SALT = crypto
+  .createHash('sha1')
+  .update(
+    JSON.stringify({
+      v: BASE_VERSION,
+      rev: TA_CACHE_SCHEMA_REV,
+      slugs: TA_SLUG_LABELS,
+      memRe: TA_MEM_FILE_RE.source
+    })
+  )
+  .digest('hex')
+  .slice(0, 16);
+
+const taParseProtoAll = parseProtoAll;
+
+function taParsePackedVarints(buf) {
+  const out = [];
+  if (!buf || typeof buf.length !== 'number') return out;
+  let i = 0;
+  while (i < buf.length) {
+    let v = 0;
+    let s = 0;
+    while (i < buf.length) {
+      const b = buf[i++];
+      v |= (b & 0x7f) << s;
+      if (!(b & 0x80)) break;
+      s += 7;
+      if (s > 35) return out;
+    }
+    out.push(v);
+  }
+  return out;
+}
+
+function taGetField(fields, num) {
+  return fields.find((x) => x.f === num);
+}
+
+function taGetAllFields(fields, num) {
+  return fields.filter((x) => x.f === num);
+}
+
+function taFieldToStr(f) {
+  return f?.buf ? textDecoder.decode(f.buf) : '';
+}
+
+function taInspectToolArgsForMemory(toolName, argsBuf) {
+  if (/^memory_/i.test(toolName)) return true;
+  if (!argsBuf || argsBuf.length === 0) return false;
+  const headSample = textDecoder.decode(argsBuf.length > 4096 ? argsBuf.subarray(0, 4096) : argsBuf);
+  if (!/memory|memories|knowledge/i.test(headSample)) return false;
+  try {
+    const obj = JSON.parse(textDecoder.decode(argsBuf));
+    const pathVal = String(
+      obj?.Path || obj?.TargetFile || obj?.File || obj?.path || obj?.file_path || obj?.uri || ''
+    ).trim();
+    return Boolean(pathVal && TA_MEM_FILE_RE.test(pathVal));
+  } catch {
+    return false;
+  }
+}
+
+function taInspectStepMetadata(metaBuf, isToolStep) {
+  let ts = 0;
+  let isExitPlan = false;
+  let hasMemoryPath = false;
+  if (!metaBuf || !metaBuf.length) return { ts, isExitPlan, hasMemoryPath };
+  let toolChecked = !isToolStep;
+  for (const fld of taParseProtoAll(metaBuf, true)) {
+    if (ts === 0 && fld.w === 2 && fld.buf.length >= 2 && fld.buf.length <= 24) {
+      const sub = taParseProtoAll(fld.buf);
+      const sec = taGetField(sub, 1)?.v;
+      if (sec && sec > 1700000000 && sec < 1900000000) ts = sec;
+    } else if (!toolChecked && fld.f === 4 && fld.w === 2 && fld.buf.length >= 8) {
+      toolChecked = true;
+      let tName = '';
+      let tArgsBuf = null;
+      for (const tcFld of taParseProtoAll(fld.buf, true)) {
+        if (tcFld.f === 2 && tcFld.w === 2 && !tcFld.partial) {
+          tName = textDecoder.decode(tcFld.buf);
+        } else if (tcFld.f === 3 && tcFld.w === 2) {
+          tArgsBuf = tcFld.buf;
+        }
+      }
+      if (tName === 'exit_plan_mode') isExitPlan = true;
+      hasMemoryPath = taInspectToolArgsForMemory(tName, tArgsBuf);
+    }
+    if (ts > 0 && toolChecked) break;
+  }
+  return { ts, isExitPlan, hasMemoryPath };
+}
+
+function taResolveStepLookup(stepTs, fallbackSec) {
+  const sorted = [...stepTs.keys()].sort((a, b) => a - b);
+  return (stepIdx) => {
+    if (stepTs.has(stepIdx)) return stepTs.get(stepIdx);
+    let lo = 0;
+    let hi = sorted.length - 1;
+    let best = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      if (sorted[mid] <= stepIdx) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (best >= 0) return stepTs.get(sorted[best]);
+    return sorted.length > 0 ? stepTs.get(sorted[0]) : fallbackSec;
+  };
+}
+
+function taExtractUserStepPlanConfig(payloadBuf) {
+  if (!payloadBuf || !payloadBuf.length) return null;
+  const top = taParseProtoAll(payloadBuf);
+  const u19 = taGetField(top, 19);
+  if (!u19?.buf) return null;
+  const u19Fields = taParseProtoAll(u19.buf);
+  let plannerEnum = 0;
+  let execEnum = 0;
+  let planFlag = false;
+  const mc12 = taGetField(u19Fields, 12);
+  if (mc12?.buf) {
+    const mc1 = taGetField(taParseProtoAll(mc12.buf), 1);
+    if (mc1?.buf) {
+      const mcFields = taParseProtoAll(mc1.buf);
+      plannerEnum = taGetField(mcFields, 1)?.v || 0;
+      const f60 = taGetField(mcFields, 60);
+      if (f60?.buf) {
+        execEnum = taGetField(taParseProtoAll(f60.buf), 1)?.v || 0;
+      }
+    }
+  }
+  const u18 = taGetField(u19Fields, 18);
+  if (u18?.buf) {
+    const f3 = taGetField(taParseProtoAll(u18.buf), 3);
+    if (f3?.buf) {
+      const f1 = taGetField(taParseProtoAll(f3.buf), 1);
+      if (f1?.buf) {
+        planFlag = taParseProtoAll(f1.buf).some((x) => x.f === 6 && x.v === 1);
+      }
+    }
+  }
+  return {
+    orchestrator: Boolean(execEnum > 0 || planFlag),
+    plannerEnum,
+    execEnum
+  };
+}
+
+function taResolvePlanStateLookup(planTimeline) {
+  if (!Array.isArray(planTimeline) || planTimeline.length === 0) {
+    return () => null;
+  }
+  return (stepIdx) => {
+    let lo = 0;
+    let hi = planTimeline.length - 1;
+    let best = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >>> 1;
+      if (planTimeline[mid].idx <= stepIdx) {
+        best = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return best >= 0 ? planTimeline[best] : null;
+  };
+}
+
+function taNormalizeSlashPath(raw) {
+  let s = String(raw || '').trim();
+  if (!s) return '';
+  if (s.startsWith('file://')) {
+    s = s.slice(7);
+    try {
+      s = decodeURIComponent(s);
+    } catch {}
+  }
+  s = s.replace(/\\/g, '/').replace(/\/{2,}/g, '/');
+  if (s.length > 1) {
+    s = s.replace(/\/+$/, '');
+  }
+  return s || '/';
+}
+
+const TA_NORMALIZED_OS_TMP = taNormalizeSlashPath(os.tmpdir()).toLowerCase();
+
+function taIsTempPath(p) {
+  if (!p) return false;
+  const low = p.toLowerCase();
+  if (TA_NORMALIZED_OS_TMP && TA_NORMALIZED_OS_TMP.length > 1) {
+    if (low === TA_NORMALIZED_OS_TMP || low.startsWith(`${TA_NORMALIZED_OS_TMP}/`)) return true;
+  }
+  return /^(?:\/private)?\/tmp(?:\/|$)/i.test(low) || /^\/var\/folders(?:\/|$)/i.test(low);
+}
+
+function taParseWorkspaceUrisList(workspaceUris) {
+  if (!workspaceUris) return [];
+  if (Array.isArray(workspaceUris)) {
+    return workspaceUris.map((x) => taNormalizeSlashPath(x)).filter(Boolean);
+  }
+  const str = String(workspaceUris).trim();
+  if (!str) return [];
+  if (str.startsWith('[')) {
+    try {
+      const arr = JSON.parse(str);
+      if (Array.isArray(arr)) {
+        return arr.map((x) => taNormalizeSlashPath(x)).filter(Boolean);
+      }
+    } catch {}
+  }
+  const decoded = taNormalizeSlashPath(str);
+  return decoded ? [decoded] : [];
+}
+
+function taNormalizeProjectInfo(workspaceUris, projectId = '') {
+  const paths = taParseWorkspaceUrisList(workspaceUris);
+  const nonTemp = paths.find((p) => !taIsTempPath(p));
+  const chosen = nonTemp || paths[0] || '';
+  const pid = String(projectId || '').trim();
+
+  if (!chosen || (pid === 'outside-of-project' && !nonTemp)) {
+    return {
+      key: '__none__',
+      name: '未绑定项目',
+      rawBasename: '未绑定项目',
+      path: '',
+      isTemp: false
+    };
+  }
+
+  if (taIsTempPath(chosen)) {
+    return {
+      key: '__tmp__',
+      name: '临时目录 (/tmp)',
+      rawBasename: '临时目录 (/tmp)',
+      path: '/tmp',
+      isTemp: true
+    };
+  }
+
+  const parts = chosen.split('/').filter(Boolean);
+  const base = parts[parts.length - 1] || chosen;
+  return {
+    key: chosen.toLowerCase(),
+    name: base,
+    rawBasename: base,
+    path: chosen,
+    isTemp: false
+  };
+}
+
+function taClassifyModelPool({ label = '', slug = '', modelEnum = '', usedClaude = '' } = {}) {
+  const combined = `${label} ${slug} ${modelEnum}`.toLowerCase();
+  if (combined.includes('argon')) return 'Argon';
+  if (combined.includes('claude') || combined.includes('gpt')) return 'Claude & GPT';
+  if (combined.includes('gemini') || combined.includes('orchestrator')) return 'Gemini';
+  if (String(usedClaude).toLowerCase() === 'true') return 'Claude & GPT';
+  return 'Gemini';
+}
+
+function taNormalizeModelLabel({ label = '', slug = '', modelEnum = '', enumId = 0 } = {}) {
+  const trimmedLabel = String(label || '').trim();
+  if (trimmedLabel) return trimmedLabel;
+  const trimmedSlug = String(slug || '').trim();
+  if (trimmedSlug && TA_SLUG_LABELS[trimmedSlug]) return TA_SLUG_LABELS[trimmedSlug];
+  if (trimmedSlug) return trimmedSlug;
+  if (modelEnum) return String(modelEnum).trim();
+  return `model-${enumId || 'unknown'}`;
+}
+
+function taFormatOrchestratorModelLabel(label) {
+  const trimmed = String(label || '').trim();
+  if (!trimmed || /orchestrator/i.test(trimmed)) return trimmed;
+  let core = trimmed.replace(/^Gemini\s+4\s+/i, '');
+  const parenMatch = core.match(/^(.+?)\s*\(([^()]+)\)$/);
+  if (parenMatch) {
+    core = `${parenMatch[1].trim()} · ${parenMatch[2].trim()}`;
+  }
+  return `Orchestrator (${core})`;
+}
+
+function taResolveCallScenario(callBaseScenario, isSubagent, source) {
+  if (isSubagent) return 'subagent';
+  if (callBaseScenario === 'planning' || callBaseScenario === 'memory') return callBaseScenario;
+  if (source === 'cli') return 'internal';
+  return callBaseScenario || 'internal';
+}
+
+function taParseIsoSeconds(val) {
+  if (!val) return 0;
+  const str = String(val).trim();
+  if (!str || str.startsWith('0001-01-01')) return 0;
+  const ms = Date.parse(str.includes('T') ? str : str.replace(' ', 'T'));
+  if (!Number.isFinite(ms) || ms <= 0) return 0;
+  return Math.floor(ms / 1000);
+}
+
+function taToLocalDateString(tsSec) {
+  const d = new Date(tsSec * 1000);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function taReadSummariesIndex(summariesDbPath) {
+  const map = new Map();
+  if (!summariesDbPath || !fs.existsSync(summariesDbPath)) return map;
+  try {
+    withReadOnlyDb(summariesDbPath, 150, (db) => {
+      const rows = db
+        .prepare(
+          `SELECT conversation_id, title, workspace_uris, project_id, source, agent_name,
+                  parent_conversation_id, nesting_depth, last_modified_time
+           FROM conversation_summaries`
+        )
+        .all();
+      for (const r of rows) {
+        if (!r?.conversation_id) continue;
+        map.set(r.conversation_id, {
+          id: r.conversation_id,
+          title: String(r.title || '').trim(),
+          workspaceUris: String(r.workspace_uris || ''),
+          projectId: String(r.project_id || ''),
+          source: String(r.source || '') === 'CORTEX_TRAJECTORY_SOURCE_CLI' ? 'cli' : 'desktop',
+          agentName: String(r.agent_name || '').trim(),
+          parentId: String(r.parent_conversation_id || '').trim(),
+          nestingDepth: Number(r.nesting_depth || 0) || 0,
+          lastModifiedSec: taParseIsoSeconds(r.last_modified_time)
+        });
+      }
+    });
+    return map;
+  } catch {
+    return null;
+  }
+}
+
+function taLoadSummariesCached(summariesDbPath, force) {
+  if (!summariesDbPath) return new Map();
+  const sigInfo = getSqliteFileSig(summariesDbPath);
+  if (!sigInfo) return new Map();
+  const cached = tokenAnalyticsSummariesCache.get(summariesDbPath);
+  if (force !== 'hard' && cached && cached.sig === sigInfo.sig) {
+    return cached.map;
+  }
+  const fresh = taReadSummariesIndex(summariesDbPath);
+  if (fresh) {
+    tokenAnalyticsSummariesCache.set(summariesDbPath, { sig: sigInfo.sig, map: fresh });
+    return fresh;
+  }
+  return cached ? cached.map : new Map();
+}
+
+function taParseGenMetadataRowToCall(row, { lookupTs, lookupPlanState, stepByIdx, compactionStepIndices, trajParentId, state }) {
+  const top = taParseProtoAll(row.data);
+  const chatField = taGetField(top, 1);
+  if (!chatField?.buf) return null;
+  const chat = taParseProtoAll(chatField.buf);
+  const usageField = taGetField(chat, 4);
+  if (!usageField?.buf) return null;
+  const usage = taParseProtoAll(usageField.buf);
+
+  const kv = {};
+  for (const entry of taGetAllFields(chat, 20)) {
+    const pair = taParseProtoAll(entry.buf);
+    const k = taFieldToStr(taGetField(pair, 1));
+    if (k) kv[k] = taFieldToStr(taGetField(pair, 2));
+  }
+
+  const stepIndicesField = taGetField(top, 2);
+  const stepIndices = stepIndicesField?.buf ? taParsePackedVarints(stepIndicesField.buf) : [];
+  const refStep = stepIndices.length > 0 ? stepIndices[0] : Number(kv.last_step_index) || 0;
+  const ts = lookupTs(refStep);
+
+  let hasStep132 = false;
+  let hasStep15 = false;
+  let hasLinkedStep = false;
+  let hasMemoryStep = false;
+  let hasExitPlanStep = false;
+  let hasNearbyCompaction = false;
+  for (const sIdx of stepIndices) {
+    const info = stepByIdx.get(sIdx);
+    if (info) {
+      hasLinkedStep = true;
+      if (info.stepType === 132) hasStep132 = true;
+      else if (info.stepType === 15) hasStep15 = true;
+      if (info.hasMemoryPath) hasMemoryStep = true;
+      if (info.isExitPlan) hasExitPlanStep = true;
+    }
+    if (
+      compactionStepIndices.has(sIdx) ||
+      compactionStepIndices.has(sIdx - 1) ||
+      compactionStepIndices.has(sIdx + 1)
+    ) {
+      hasNearbyCompaction = true;
+    }
+  }
+  if (!hasNearbyCompaction && stepIndices.length === 0 && refStep > 0) {
+    if (
+      compactionStepIndices.has(refStep) ||
+      compactionStepIndices.has(refStep - 1) ||
+      compactionStepIndices.has(refStep + 1)
+    ) {
+      hasNearbyCompaction = true;
+    }
+  }
+
+  const slug = taFieldToStr(taGetField(chat, 19));
+  const rawLabel = taFieldToStr(taGetField(chat, 21));
+  const enumId = taGetField(usage, 1)?.v || taGetField(chat, 3)?.v || 0;
+  const modelEnum = kv.model_enum || '';
+  const usedClaude = kv.used_claude || '';
+  const baseLabel = taNormalizeModelLabel({ label: rawLabel, slug, modelEnum, enumId });
+  const pool = taClassifyModelPool({ label: baseLabel, slug, modelEnum, usedClaude });
+
+  const slugLower = String(slug || '').toLowerCase();
+  const labelTrim = String(baseLabel || '').trim();
+  const planSt = lookupPlanState(refStep);
+  let isOrchestratorPlanning = false;
+  if (slugLower.includes('worker')) {
+    isOrchestratorPlanning = false;
+  } else if (slugLower.includes('orchestrator') || /^orchestrator\b/i.test(labelTrim)) {
+    isOrchestratorPlanning = true;
+  } else if (hasExitPlanStep) {
+    isOrchestratorPlanning = true;
+  } else if (planSt?.orchestrator) {
+    if (planSt.plannerEnum > 0 && planSt.execEnum > 0 && planSt.plannerEnum !== planSt.execEnum) {
+      isOrchestratorPlanning = enumId === planSt.plannerEnum;
+    } else {
+      isOrchestratorPlanning = Boolean(planSt.inPlanPhase);
+    }
+  }
+
+  let baseScenario = 'internal';
+  if (isOrchestratorPlanning) {
+    baseScenario = 'planning';
+  } else if (hasNearbyCompaction || hasMemoryStep) {
+    baseScenario = 'memory';
+  } else if (hasLinkedStep) {
+    if (hasStep132) baseScenario = 'tools';
+    else if (hasStep15) baseScenario = 'chat';
+  }
+
+  const inTok = taGetField(usage, 2)?.v || 0;
+  const outTok = taGetField(usage, 3)?.v || 0;
+  const cacheRead = taGetField(usage, 5)?.v || 0;
+  const thinkTok = taGetField(usage, 9)?.v || 0;
+  const respTok = taGetField(usage, 10)?.v || 0;
+
+  const subagentType = String(kv.subagent_type || '').trim();
+  const parentCascadeId = String(kv.parent_cascade_id || '').trim();
+  const rootCascadeId = String(kv.root_cascade_id || '').trim();
+  if (!state.firstParentCascadeId && parentCascadeId) state.firstParentCascadeId = parentCascadeId;
+  if (!state.firstRootCascadeId && rootCascadeId) state.firstRootCascadeId = rootCascadeId;
+  if (!state.firstSubagentType && subagentType) state.firstSubagentType = subagentType;
+
+  const isSubagentCall = Boolean(trajParentId || state.firstParentCascadeId || subagentType);
+  const finalModelLabel =
+    isOrchestratorPlanning && !isSubagentCall ? taFormatOrchestratorModelLabel(baseLabel) : baseLabel;
+
+  return {
+    gIdx: row.idx,
+    ts,
+    model: finalModelLabel,
+    pool,
+    inTok,
+    cacheRead,
+    outTok,
+    thinkTok,
+    respTok,
+    total: inTok + cacheRead + outTok,
+    weighted: Math.round(inTok + 0.1 * cacheRead + 6 * outTok),
+    billable: inTok + outTok,
+    baseScenario,
+    subagentType
+  };
+}
+
+function taIngestStepRow(row, stepTs, stepByIdx, compactionStepIndices, planTimeline, planCursor) {
+  const { ts, isExitPlan, hasMemoryPath } = taInspectStepMetadata(row.metadata, row.step_type === 132);
+  if (ts > 0) stepTs.set(row.idx, ts);
+  if (row.step_type === 23) compactionStepIndices.add(row.idx);
+  if (row.step_type === 14 && row.step_payload) {
+    const cfg = taExtractUserStepPlanConfig(row.step_payload);
+    if (cfg) {
+      planCursor.cur = { ...cfg, inPlanPhase: cfg.orchestrator };
+      planTimeline.push({ ...planCursor.cur, idx: row.idx });
+    }
+  } else if (row.step_type === 101 && row.step_payload && planCursor.cur.orchestrator) {
+    const headStr = textDecoder.decode(row.step_payload);
+    if (headStr.includes('Plan mode is off:') && planCursor.cur.inPlanPhase) {
+      planCursor.cur = { ...planCursor.cur, inPlanPhase: false };
+      planTimeline.push({ ...planCursor.cur, idx: row.idx });
+    } else if (headStr.includes('[plan review]') && !planCursor.cur.inPlanPhase) {
+      planCursor.cur = { ...planCursor.cur, inPlanPhase: true };
+      planTimeline.push({ ...planCursor.cur, idx: row.idx });
+    }
+  }
+  stepByIdx.set(row.idx, { stepType: row.step_type, hasMemoryPath, isExitPlan });
+}
+
+function taParseConversationDetailDb(dbPath, statInfo, prevCacheEntry = null) {
+  const dbId = path.basename(dbPath, '.db');
+  try {
+    return withReadOnlyDb(dbPath, 150, (db) => {
+      const fallbackSec = Math.floor((statInfo?.mtimeMs || fs.statSync(dbPath).mtimeMs || Date.now()) / 1000);
+
+      let trajParentId = '';
+      let trajRootId = '';
+      let trajWorkspaceUri = '';
+      let trajProjectId = '';
+      try {
+        const mrow = db.prepare('SELECT data FROM trajectory_metadata_blob LIMIT 1').get();
+        if (mrow?.data) {
+          const mf = taParseProtoAll(mrow.data);
+          trajParentId = taFieldToStr(taGetField(mf, 5)).trim();
+          trajRootId = taFieldToStr(taGetField(mf, 6)).trim();
+          trajWorkspaceUri = taFieldToStr(taGetField(mf, 7)).trim();
+          trajProjectId = taFieldToStr(taGetField(mf, 18)).trim();
+          if (!trajWorkspaceUri) {
+            const wsField = taGetField(mf, 1);
+            if (wsField?.buf) {
+              const wsSub = taParseProtoAll(wsField.buf);
+              trajWorkspaceUri =
+                taFieldToStr(taGetField(wsSub, 1)).trim() || taFieldToStr(taGetField(wsSub, 2)).trim();
+            }
+          }
+        }
+      } catch {}
+
+      const gmStat = db.prepare('SELECT COUNT(*) AS cnt, COALESCE(MAX(idx), -1) AS maxIdx FROM gen_metadata').get();
+      const genCount = Number(gmStat?.cnt || 0);
+      const maxGenIdx = Number(gmStat?.maxIdx ?? -1);
+      if (genCount === 0) {
+        return {
+          ok: true,
+          dbId,
+          mtimeSec: fallbackSec,
+          trajMeta: {
+            parentId: trajParentId,
+            rootId: trajRootId,
+            subagentType: '',
+            workspaceUri: trajWorkspaceUri,
+            projectId: trajProjectId
+          },
+          calls: [],
+          _inc: null
+        };
+      }
+
+      const stStat = db.prepare('SELECT COUNT(*) AS cnt, COALESCE(MAX(idx), -1) AS maxIdx FROM steps').get();
+      const stepCount = Number(stStat?.cnt || 0);
+      const maxStepIdx = Number(stStat?.maxIdx ?? -1);
+
+      const prevInc = prevCacheEntry?._inc;
+      const prevParsed = prevCacheEntry?.parsed;
+      const startStepIdx = prevInc ? Math.max(0, prevInc.maxStepIdx - 4) : 0;
+      const startGenIdx = prevInc ? Math.max(0, prevInc.maxGenIdx - 1) : 0;
+      let anchorValid = false;
+      if (
+        prevInc &&
+        prevParsed?.ok &&
+        genCount >= prevInc.genCount &&
+        maxGenIdx >= prevInc.maxGenIdx &&
+        stepCount >= prevInc.stepCount &&
+        maxStepIdx >= prevInc.maxStepIdx
+      ) {
+        if (startGenIdx > 0 && prevInc.anchorIdx >= 0) {
+          const prefixCnt = db.prepare('SELECT COUNT(*) AS cnt FROM gen_metadata WHERE idx < ?').get(startGenIdx)?.cnt ?? -1;
+          const aRow = db
+            .prepare('SELECT length(data) AS len, hex(substr(data, 1, 24)) AS hex FROM gen_metadata WHERE idx = ?')
+            .get(prevInc.anchorIdx);
+          anchorValid = Boolean(
+            prefixCnt === prevInc.frozenGenCount &&
+              aRow &&
+              aRow.len === prevInc.anchorLen &&
+              aRow.hex === prevInc.anchorHex
+          );
+        } else {
+          anchorValid = startGenIdx === 0;
+        }
+      }
+
+      if (anchorValid) {
+        // 回退重读末尾 2 条 gen_metadata 与末尾 5 条 steps，兼顾邻近压缩步 (sIdx+1) 与流式尾行原地更新，并精确拦截 Undo 重写
+        const deltaSteps = db
+          .prepare(
+            `SELECT idx, step_type, metadata,
+                    CASE
+                      WHEN step_type = 14 THEN step_payload
+                      WHEN step_type = 101 THEN substr(step_payload, 1, 1024)
+                      ELSE NULL
+                    END AS step_payload
+             FROM steps
+             WHERE idx >= ?
+             ORDER BY idx ASC`
+          )
+          .all(startStepIdx);
+        const deltaGenRows = db
+          .prepare('SELECT idx, data FROM gen_metadata WHERE idx >= ? ORDER BY idx ASC')
+          .all(startGenIdx);
+
+        const baseCalls = prevParsed.calls.filter((c) => typeof c.gIdx === 'number' && c.gIdx < startGenIdx);
+        if (baseCalls.length + deltaGenRows.length <= genCount) {
+          const stepTs = new Map(prevInc.stepTs);
+          const stepByIdx = new Map(prevInc.stepByIdx);
+          const compactionStepIndices = new Set(prevInc.compactionStepIndices);
+          for (const k of [...stepTs.keys()]) {
+            if (k >= startStepIdx) stepTs.delete(k);
+          }
+          for (const k of [...stepByIdx.keys()]) {
+            if (k >= startStepIdx) stepByIdx.delete(k);
+          }
+          for (const k of [...compactionStepIndices]) {
+            if (k >= startStepIdx) compactionStepIndices.delete(k);
+          }
+          const planTimeline = prevInc.planTimeline.filter((p) => p.idx < startStepIdx);
+          let seedCur = { orchestrator: false, plannerEnum: 0, execEnum: 0, inPlanPhase: false };
+          if (planTimeline.length > 0) {
+            const lastPt = planTimeline[planTimeline.length - 1];
+            seedCur = {
+              orchestrator: Boolean(lastPt.orchestrator),
+              plannerEnum: lastPt.plannerEnum || 0,
+              execEnum: lastPt.execEnum || 0,
+              inPlanPhase: Boolean(lastPt.inPlanPhase)
+            };
+          }
+          const planCursor = { cur: seedCur };
+          for (const row of deltaSteps) {
+            taIngestStepRow(row, stepTs, stepByIdx, compactionStepIndices, planTimeline, planCursor);
+          }
+          const lookupTs = taResolveStepLookup(stepTs, fallbackSec);
+          const lookupPlanState = taResolvePlanStateLookup(planTimeline);
+          const lineageState = {
+            firstParentCascadeId: prevInc.firstParentCascadeId || '',
+            firstRootCascadeId: prevInc.firstRootCascadeId || '',
+            firstSubagentType: prevInc.firstSubagentType || ''
+          };
+          for (const row of deltaGenRows) {
+            const c = taParseGenMetadataRowToCall(row, {
+              lookupTs,
+              lookupPlanState,
+              stepByIdx,
+              compactionStepIndices,
+              trajParentId,
+              state: lineageState
+            });
+            if (c) baseCalls.push(c);
+          }
+          const nextStartGenIdx = Math.max(0, maxGenIdx - 1);
+          const nextFrozenCnt = nextStartGenIdx > 0
+            ? db.prepare('SELECT COUNT(*) AS cnt FROM gen_metadata WHERE idx < ?').get(nextStartGenIdx)?.cnt ?? 0
+            : 0;
+          const nextFrozenRow = nextStartGenIdx > 0
+            ? db
+                .prepare('SELECT idx, length(data) AS len, hex(substr(data, 1, 24)) AS hex FROM gen_metadata WHERE idx < ? ORDER BY idx DESC LIMIT 1')
+                .get(nextStartGenIdx)
+            : null;
+          return {
+            ok: true,
+            dbId,
+            mtimeSec: fallbackSec,
+            trajMeta: {
+              parentId: trajParentId || lineageState.firstParentCascadeId,
+              rootId: trajRootId || lineageState.firstRootCascadeId,
+              subagentType: lineageState.firstSubagentType,
+              workspaceUri: trajWorkspaceUri,
+              projectId: trajProjectId
+            },
+            calls: baseCalls,
+            _inc: {
+              genCount,
+              maxGenIdx,
+              stepCount,
+              maxStepIdx,
+              frozenGenCount: nextFrozenCnt,
+              anchorIdx: nextFrozenRow ? nextFrozenRow.idx : -1,
+              anchorLen: nextFrozenRow ? nextFrozenRow.len : 0,
+              anchorHex: nextFrozenRow ? nextFrozenRow.hex : '',
+              stepTs,
+              stepByIdx,
+              compactionStepIndices,
+              planTimeline,
+              firstParentCascadeId: lineageState.firstParentCascadeId,
+              firstRootCascadeId: lineageState.firstRootCascadeId,
+              firstSubagentType: lineageState.firstSubagentType
+            }
+          };
+        }
+      }
+
+      const stepTs = new Map();
+      const stepByIdx = new Map();
+      const compactionStepIndices = new Set();
+      const planTimeline = [];
+      const planCursor = { cur: { orchestrator: false, plannerEnum: 0, execEnum: 0, inPlanPhase: false } };
+
+      // 整列读取 metadata（保障 100% exit_plan_mode 与长工具参数零截断丢失），CASE 跳过占全库 92% 体积的 step_type=132 step_payload 溢出页；
+      // 使用 .all() 避免 Node 22.13~22.14 StatementSync.iterate() 链式临时对象在循环内遭 V8 GC 提前析构触发原生崩溃
+      for (const row of db
+        .prepare(
+          `SELECT idx, step_type, metadata,
+                  CASE
+                    WHEN step_type = 14 THEN step_payload
+                    WHEN step_type = 101 THEN substr(step_payload, 1, 1024)
+                    ELSE NULL
+                  END AS step_payload
+           FROM steps
+           ORDER BY idx ASC`
+        )
+        .all()) {
+        taIngestStepRow(row, stepTs, stepByIdx, compactionStepIndices, planTimeline, planCursor);
+      }
+      const lookupTs = taResolveStepLookup(stepTs, fallbackSec);
+      const lookupPlanState = taResolvePlanStateLookup(planTimeline);
+
+      const calls = [];
+      const lineageState = {
+        firstParentCascadeId: '',
+        firstRootCascadeId: '',
+        firstSubagentType: ''
+      };
+
+      const allGenRows = db.prepare('SELECT idx, data FROM gen_metadata ORDER BY idx ASC').all();
+      for (const row of allGenRows) {
+        const c = taParseGenMetadataRowToCall(row, {
+          lookupTs,
+          lookupPlanState,
+          stepByIdx,
+          compactionStepIndices,
+          trajParentId,
+          state: lineageState
+        });
+        if (c) calls.push(c);
+      }
+
+      const nextStartGenIdx = Math.max(0, maxGenIdx - 1);
+      let fullFrozenCnt = 0;
+      let lastFrozenGen = null;
+      if (nextStartGenIdx > 0) {
+        for (const row of allGenRows) {
+          if (row.idx < nextStartGenIdx) {
+            fullFrozenCnt += 1;
+            lastFrozenGen = row;
+          }
+        }
+      }
+      const fullAnchorIdx = lastFrozenGen ? lastFrozenGen.idx : -1;
+      const fullAnchorLen = lastFrozenGen?.data ? lastFrozenGen.data.length : 0;
+      const fullAnchorHex =
+        lastFrozenGen?.data
+          ? Buffer.from(lastFrozenGen.data.subarray(0, Math.min(24, lastFrozenGen.data.length))).toString('hex').toUpperCase()
+          : '';
+
+      return {
+        ok: true,
+        dbId,
+        mtimeSec: fallbackSec,
+        trajMeta: {
+          parentId: trajParentId || lineageState.firstParentCascadeId,
+          rootId: trajRootId || lineageState.firstRootCascadeId,
+          subagentType: lineageState.firstSubagentType,
+          workspaceUri: trajWorkspaceUri,
+          projectId: trajProjectId
+        },
+        calls,
+        _inc: {
+          genCount,
+          maxGenIdx,
+          stepCount,
+          maxStepIdx,
+          frozenGenCount: fullFrozenCnt,
+          anchorIdx: fullAnchorIdx,
+          anchorLen: fullAnchorLen,
+          anchorHex: fullAnchorHex,
+          stepTs,
+          stepByIdx,
+          compactionStepIndices,
+          planTimeline,
+          firstParentCascadeId: lineageState.firstParentCascadeId,
+          firstRootCascadeId: lineageState.firstRootCascadeId,
+          firstSubagentType: lineageState.firstSubagentType
+        }
+      };
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      dbId,
+      error: err?.message || String(err)
+    };
+  }
+}
+
+function taChooseCanonicalProjectNames(projVotes) {
+  const canonical = new Map();
+  for (const [key, voteMap] of projVotes.entries()) {
+    const candidates = [...voteMap.entries()].sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      const aUpper = /^[A-Z]/.test(a[0]) ? 1 : 0;
+      const bUpper = /^[A-Z]/.test(b[0]) ? 1 : 0;
+      if (bUpper !== aUpper) return bUpper - aUpper;
+      return a[0].localeCompare(b[0]);
+    });
+    canonical.set(key, candidates[0]?.[0] || key);
+  }
+  return canonical;
+}
+
+const yieldEventLoop = () => new Promise((resolve) => setImmediate(resolve));
+
+async function loadTokenAnalyticsDiskCacheIfNeeded(force) {
+  if (SAFE_MODE) return;
+  if (force === 'hard') {
+    tokenAnalyticsDbCache.clear();
+    tokenAnalyticsSummariesCache.clear();
+    tokenAnalyticsDiskLoaded = true;
+    return;
+  }
+  if (tokenAnalyticsDiskLoaded || tokenAnalyticsDbCache.size > 0) return;
+  tokenAnalyticsDiskLoaded = true;
+  try {
+    const raw = await fs.promises.readFile(TA_CACHE_FILE, 'utf8');
+    const obj = JSON.parse(raw);
+    if (!obj || obj.salt !== TA_CACHE_SALT || !obj.entries || typeof obj.entries !== 'object') {
+      await fs.promises.unlink(TA_CACHE_FILE).catch(() => {});
+      return;
+    }
+    for (const [dbPath, item] of Object.entries(obj.entries)) {
+      if (item && typeof item.sig === 'string' && item.parsed?.ok && Array.isArray(item.parsed.calls)) {
+        tokenAnalyticsDbCache.set(dbPath, { sig: item.sig, parsed: item.parsed, _inc: null });
+      }
+    }
+  } catch (err) {
+    if (err && err.code !== 'ENOENT') {
+      await fs.promises.unlink(TA_CACHE_FILE).catch(() => {});
+    }
+  }
+}
+
+let tokenAnalyticsFlushInFlight = false;
+let tokenAnalyticsFlushPending = false;
+
+async function flushTokenAnalyticsDiskCacheAsync() {
+  if (SAFE_MODE || RUN_ONCE || daemonExiting || tokenAnalyticsDbCache.size === 0) return;
+  if (tokenAnalyticsFlushInFlight) {
+    tokenAnalyticsFlushPending = true;
+    return;
+  }
+  tokenAnalyticsFlushInFlight = true;
+  try {
+    do {
+      tokenAnalyticsFlushPending = false;
+      if (SAFE_MODE || RUN_ONCE || daemonExiting || tokenAnalyticsDbCache.size === 0) break;
+      const entries = Object.create(null);
+      for (const [dbPath, item] of tokenAnalyticsDbCache.entries()) {
+        if (item && item.sig && item.parsed?.ok) {
+          entries[dbPath] = { sig: item.sig, parsed: item.parsed };
+        }
+      }
+      const tmpFile = `${TA_CACHE_FILE}.${process.pid}.${Date.now()}.tmp`;
+      try {
+        await fs.promises.mkdir(CACHE_DIR, { recursive: true, mode: 0o700 });
+        await fs.promises.chmod(CACHE_DIR, 0o700).catch(() => {});
+        const payloadStr = JSON.stringify({ salt: TA_CACHE_SALT, updatedAt: Date.now(), entries });
+        await fs.promises.writeFile(tmpFile, payloadStr, { encoding: 'utf8', mode: 0o600 });
+        await fs.promises.chmod(tmpFile, 0o600).catch(() => {});
+        await fs.promises.rename(tmpFile, TA_CACHE_FILE);
+      } catch {
+        await fs.promises.unlink(tmpFile).catch(() => {});
+      }
+    } while (tokenAnalyticsFlushPending);
+  } finally {
+    tokenAnalyticsFlushInFlight = false;
+  }
+}
+
+function scheduleTokenAnalyticsDiskPersist() {
+  if (SAFE_MODE || RUN_ONCE || daemonExiting) return;
+  if (tokenAnalyticsPersistTimer) clearTimeout(tokenAnalyticsPersistTimer);
+  tokenAnalyticsPersistTimer = setTimeout(() => {
+    tokenAnalyticsPersistTimer = null;
+    void flushTokenAnalyticsDiskCacheAsync();
+  }, 2000);
+  if (typeof tokenAnalyticsPersistTimer.unref === 'function') {
+    tokenAnalyticsPersistTimer.unref();
+  }
+}
+
+async function queryTokenAnalytics(
+  endpoint,
+  { maxDays = 365, force = false, nowSec = Math.floor(Date.now() / 1000) } = {}
+) {
+  lastTokenAnalyticsAccessMs = Date.now();
+  const t0 = performance.now();
+  await loadTokenAnalyticsDiskCacheIfNeeded(force);
+  let sliceStartMs = performance.now();
+  const primaryDir =
+    endpoint?.conversationsDir || path.join(os.homedir(), endpoint?.geminiSubDir || '.gemini/antigravity', 'conversations');
+
+  const summaries = new Map();
+  const dbCandidateById = new Map(); // dbId -> { dbPath, sigInfo }
+
+  let dirExists = false;
+  try {
+    dirExists = Boolean(primaryDir && fs.existsSync(primaryDir));
+  } catch {
+    dirExists = false;
+  }
+
+  if (dirExists) {
+    const sumPath = path.join(path.dirname(primaryDir), 'conversation_summaries.db');
+    const sumMap = taLoadSummariesCached(sumPath, force);
+    for (const [k, v] of sumMap.entries()) {
+      if (!summaries.has(k)) summaries.set(k, v);
+    }
+
+    let entries = [];
+    try {
+      entries = fs.readdirSync(primaryDir).filter((name) => name.endsWith('.db')).sort();
+    } catch {
+      entries = [];
+    }
+
+    let statIter = 0;
+    for (const fileName of entries) {
+      const dbPath = path.join(primaryDir, fileName);
+      const dbId = path.basename(fileName, '.db');
+      const sigInfo = getSqliteFileSig(dbPath);
+      if (!sigInfo) continue;
+      const existing = dbCandidateById.get(dbId);
+      if (!existing || sigInfo.mtimeMs > existing.sigInfo.mtimeMs) {
+        dbCandidateById.set(dbId, { dbPath, sigInfo });
+      }
+      statIter += 1;
+      if (statIter % 80 === 0 && performance.now() - sliceStartMs >= 16) {
+        await yieldEventLoop();
+        sliceStartMs = performance.now();
+      }
+    }
+  }
+
+  const activePaths = new Set();
+  const parsedDbs = [];
+  const failedDbs = [];
+  let cacheHits = 0;
+  let cacheMisses = 0;
+  let missesSinceYield = 0;
+
+  // 按最新修改时间优先解析，每处理 8 个未命中库或单切片达 16ms 即让出事件循环，保障主窗口胶囊与 BrowserWatcher 零阻塞
+  const dbEntries = [...dbCandidateById.values()].sort(
+    (a, b) => (b.sigInfo.mtimeMs || 0) - (a.sigInfo.mtimeMs || 0) || a.dbPath.localeCompare(b.dbPath)
+  );
+  for (const { dbPath, sigInfo } of dbEntries) {
+    activePaths.add(dbPath);
+    const cached = force !== 'hard' ? tokenAnalyticsDbCache.get(dbPath) : null;
+    if (cached && cached.sig === sigInfo.sig) {
+      cacheHits += 1;
+      parsedDbs.push(cached.parsed);
+      continue;
+    }
+
+    cacheMisses += 1;
+    missesSinceYield += 1;
+    const rawResult = taParseConversationDetailDb(dbPath, sigInfo, force !== 'hard' ? cached : null);
+    if (rawResult.ok) {
+      const { _inc, ...compactParsed } = rawResult;
+      const keepInc = _inc && Date.now() - (sigInfo.mtimeMs || 0) < 86400000 ? _inc : null;
+      tokenAnalyticsDbCache.set(dbPath, { sig: sigInfo.sig, parsed: compactParsed, _inc: keepInc });
+      parsedDbs.push(compactParsed);
+    } else if (cached?.parsed) {
+      parsedDbs.push(cached.parsed);
+    } else {
+      failedDbs.push({ dbId: rawResult.dbId, error: rawResult.error });
+    }
+
+    if (missesSinceYield >= 8 || performance.now() - sliceStartMs >= 16) {
+      await yieldEventLoop();
+      sliceStartMs = performance.now();
+      missesSinceYield = 0;
+    }
+  }
+
+  let prunedCount = 0;
+  for (const oldPath of tokenAnalyticsDbCache.keys()) {
+    if (!activePaths.has(oldPath)) {
+      tokenAnalyticsDbCache.delete(oldPath);
+      prunedCount += 1;
+    }
+  }
+
+  if (cacheMisses > 0 || prunedCount > 0 || force === 'hard') {
+    scheduleTokenAnalyticsDiskPersist();
+  }
+
+  const cutoffSec = maxDays > 0 ? nowSec - maxDays * 86400 : 0;
+
+  const rawMetaById = new Map();
+  for (const parsed of parsedDbs) {
+    const id = parsed.dbId;
+    const sum = summaries.get(id);
+
+    const parentId = sum?.parentId || parsed.trajMeta.parentId || '';
+    const rawRoot = parsed.trajMeta.rootId || '';
+    const agentName = sum?.agentName || parsed.trajMeta.subagentType || '';
+    const isSubagent = Boolean(
+      (sum && sum.nestingDepth > 0) ||
+        parentId ||
+        agentName ||
+        (rawRoot && rawRoot !== id)
+    );
+    const source = sum?.source || 'desktop';
+    const workspaceUris = sum?.workspaceUris || parsed.trajMeta.workspaceUri || '';
+    const projectId = sum?.projectId || parsed.trajMeta.projectId || '';
+    const proj = taNormalizeProjectInfo(workspaceUris, projectId);
+
+    rawMetaById.set(id, {
+      id,
+      title: sum?.title || '',
+      source,
+      agentName,
+      parentId,
+      rawRoot,
+      isSubagent,
+      proj,
+      parsed
+    });
+  }
+
+  const resolvedMetaById = new Map();
+  const projectRegistry = new Map();
+
+  function resolveRootId(id) {
+    const seen = new Set();
+    let cur = id;
+    while (cur && !seen.has(cur)) {
+      seen.add(cur);
+      const m = rawMetaById.get(cur);
+      if (!m) break;
+      if (m.parentId && rawMetaById.has(m.parentId) && m.parentId !== cur) {
+        cur = m.parentId;
+        continue;
+      }
+      if (m.rawRoot && rawMetaById.has(m.rawRoot) && m.rawRoot !== cur) {
+        cur = m.rawRoot;
+        continue;
+      }
+      return cur;
+    }
+    const m = rawMetaById.get(id);
+    return m?.parentId || m?.rawRoot || id;
+  }
+
+  for (const [id, m] of rawMetaById.entries()) {
+    const rootId = resolveRootId(id);
+    let proj = m.proj;
+    if (proj.key === '__none__' && rootId !== id && rawMetaById.has(rootId)) {
+      proj = rawMetaById.get(rootId).proj;
+    }
+    if (!projectRegistry.has(proj.key)) {
+      projectRegistry.set(proj.key, {
+        key: proj.key,
+        path: proj.path,
+        isTemp: proj.isTemp,
+        votes: new Map()
+      });
+    }
+    const reg = projectRegistry.get(proj.key);
+    reg.votes.set(proj.rawBasename, (reg.votes.get(proj.rawBasename) || 0) + 1);
+    if (!reg.path && proj.path) reg.path = proj.path;
+
+    const fallbackTitle = m.isSubagent
+      ? `${m.agentName || 'subagent'} 子任务 (${id.slice(0, 8)})`
+      : `会话 ${id.slice(0, 8)}`;
+
+    resolvedMetaById.set(id, {
+      id,
+      title: m.title || fallbackTitle,
+      source: m.source,
+      agentName: m.agentName,
+      parentId: m.parentId || (m.isSubagent && rootId !== id ? rootId : ''),
+      rootId,
+      isSubagent: m.isSubagent,
+      projectKey: proj.key,
+      parsed: m.parsed
+    });
+  }
+
+  const projVotes = new Map([...projectRegistry.entries()].map(([k, v]) => [k, v.votes]));
+  const canonicalProjectNames = taChooseCanonicalProjectNames(projVotes);
+
+  const projects = [...projectRegistry.values()]
+    .map((p) => ({
+      key: p.key,
+      name: p.key === '__none__' ? '未绑定项目' : p.key === '__tmp__' ? '临时目录 (/tmp)' : canonicalProjectNames.get(p.key),
+      path: p.path,
+      isTemp: p.isTemp
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'));
+  const projNameByKey = new Map(projects.map((p) => [p.key, p.name]));
+
+  const factsMap = new Map();
+  const conversations = {};
+  const dailyMap = new Map();
+  let totalCalls = 0;
+
+  for (const meta of resolvedMetaById.values()) {
+    const windowCalls = cutoffSec > 0 ? meta.parsed.calls.filter((c) => c.ts >= cutoffSec) : meta.parsed.calls;
+    if (windowCalls.length === 0) continue;
+
+    let lastTs = 0;
+    const modelSet = new Set();
+
+    for (const c of windowCalls) {
+      totalCalls += 1;
+      if (c.ts > lastTs) lastTs = c.ts;
+      modelSet.add(c.model);
+
+      const callIsSubagent = meta.isSubagent || Boolean(c.subagentType);
+      const subagentType = callIsSubagent ? c.subagentType || meta.agentName || 'subagent' : '';
+      const scenario = taResolveCallScenario(c.baseScenario, callIsSubagent, meta.source);
+      const date = taToLocalDateString(c.ts || meta.parsed.mtimeSec);
+      const fKey = `${date}\x00${meta.id}\x00${c.model}\x00${c.pool}\x00${scenario}\x00${subagentType}`;
+      let fact = factsMap.get(fKey);
+      if (!fact) {
+        fact = {
+          date,
+          cid: meta.id,
+          model: c.model,
+          pool: c.pool,
+          scenario,
+          subagentType,
+          calls: 0,
+          inTok: 0,
+          cacheRead: 0,
+          outTok: 0,
+          thinkTok: 0,
+          respTok: 0,
+          total: 0,
+          weighted: 0,
+          billable: 0
+        };
+        factsMap.set(fKey, fact);
+      }
+      fact.calls += 1;
+      fact.inTok += c.inTok;
+      fact.cacheRead += c.cacheRead;
+      fact.outTok += c.outTok;
+      fact.thinkTok += c.thinkTok;
+      fact.respTok += c.respTok;
+      fact.total += c.total;
+      fact.weighted += c.weighted;
+      fact.billable += c.billable;
+
+      let dAcc = dailyMap.get(date);
+      if (!dAcc) {
+        dAcc = { date, calls: 0, inTok: 0, cacheRead: 0, outTok: 0, total: 0, weighted: 0, billable: 0 };
+        dailyMap.set(date, dAcc);
+      }
+      dAcc.calls += 1;
+      dAcc.inTok += c.inTok;
+      dAcc.cacheRead += c.cacheRead;
+      dAcc.outTok += c.outTok;
+      dAcc.total += c.total;
+      dAcc.weighted += c.weighted;
+      dAcc.billable += c.billable;
+    }
+
+    conversations[meta.id] = {
+      id: meta.id,
+      title: meta.title,
+      projectKey: meta.projectKey,
+      projectName: projNameByKey.get(meta.projectKey) || '未绑定项目',
+      source: meta.source,
+      isSubagent: meta.isSubagent,
+      agentName: meta.agentName,
+      parentId: meta.parentId,
+      rootId: meta.rootId,
+      lastTs,
+      models: [...modelSet]
+    };
+  }
+
+  const facts = [...factsMap.values()].sort((a, b) => {
+    if (b.date !== a.date) return b.date.localeCompare(a.date);
+    return b.weighted - a.weighted;
+  });
+  const dailySummary = [...dailyMap.values()].sort((a, b) => a.date.localeCompare(b.date));
+
+  const usedProjectKeys = new Set(Object.values(conversations).map((c) => c.projectKey));
+  const activeProjects = projects.filter((p) => usedProjectKeys.has(p.key));
+
+  return {
+    version: 1,
+    generatedAt: new Date(nowSec * 1000).toISOString(),
+    nowSec,
+    defaultMetric: 'weighted',
+    elapsedMs: Number((performance.now() - t0).toFixed(2)),
+    stats: {
+      dbCount: dbEntries.length,
+      scannedDbs: parsedDbs.length,
+      failedDbs: failedDbs.length,
+      totalCalls,
+      conversationCount: Object.keys(conversations).length,
+      projectCount: activeProjects.length,
+      cacheHits,
+      cacheMisses
+    },
+    projects: activeProjects,
+    conversations,
+    facts,
+    dailySummary
+  };
+}
+
+function runTokenAnalyticsQuery(endpoint, opts = {}) {
+  const key = `${endpoint?.channel || 'default'}|${endpoint?.conversationsDir || ''}|${opts.maxDays || 365}`;
+  if (!opts.force && inFlightTokenAnalyticsPromise && inFlightTokenAnalyticsKey === key) {
+    return inFlightTokenAnalyticsPromise;
+  }
+  const run = (async () => {
+    if (inFlightTokenAnalyticsPromise) {
+      try {
+        await inFlightTokenAnalyticsPromise;
+      } catch {}
+    }
+    return queryTokenAnalytics(endpoint, opts);
+  })();
+  inFlightTokenAnalyticsKey = key;
+  inFlightTokenAnalyticsPromise = run;
+  run
+    .finally(() => {
+      if (inFlightTokenAnalyticsPromise === run) {
+        inFlightTokenAnalyticsPromise = null;
+        inFlightTokenAnalyticsKey = '';
+      }
+    })
+    .catch(() => {});
+  return run;
+}
+
+// ============================================================================
 // 5. CDP 目标发现、WebSocket 会话挂载与热更新推送
 // ============================================================================
-const skippedNonHostTargets = new Map(); // targetId -> { origin, skippedAt }
 
 function belongsToParentTarget(entry, parentTargetId, parentChannel) {
   let curId = entry.parentId || null;
@@ -1974,7 +3388,12 @@ const HOST_PROBE_EXPRESSION = `(function(){
       typeof document.querySelector === 'function' &&
       document.querySelector('link[href*="/jetbox.css"], body[data-agy-theme], body[data-newux-theme], [id="antigravity.agentSidePanelInputBox"]')
     ) return 'host';
-    if (typeof document === 'undefined' || !document.documentElement || document.readyState === 'loading') {
+    if (
+      typeof document === 'undefined' ||
+      !document.documentElement ||
+      document.readyState === 'loading' ||
+      (loc && (loc.protocol === 'chrome-error:' || loc.protocol === 'about:' || loc.protocol === 'data:'))
+    ) {
       return 'pending';
     }
     return 'non_host';
@@ -1983,44 +3402,384 @@ const HOST_PROBE_EXPRESSION = `(function(){
   }
 })()`;
 
-function readPort(portFile) {
+function readPortInfo(portFile) {
   try {
     const raw = fs.readFileSync(portFile, 'utf8').trim();
     const lines = raw.split(/\r?\n/);
     const port = parseInt(lines[0], 10);
-    return Number.isFinite(port) && port > 0 ? port : null;
+    const wsPath = (lines[1] || '').trim();
+    return {
+      port: Number.isFinite(port) && port > 0 ? port : null,
+      browserWsPath: wsPath.startsWith('/') ? wsPath : ''
+    };
   } catch {
-    return null;
+    return { port: null, browserWsPath: '' };
   }
 }
 
-function fetchTargets(port) {
+function readPort(portFile) {
+  return readPortInfo(portFile).port;
+}
+
+function isExternalNonHostBrowserProduct(browserStr, userAgentStr = '') {
+  const b = String(browserStr || '').trim();
+  const ua = String(userAgentStr || '').trim();
+  if (!b && !ua) return false;
+  if (/electron|antigravity/i.test(b) || /electron\/|antigravity\//i.test(ua)) return false;
+  return /^(?:Headless)?Chrome\/|^Edg\/|^Brave\//i.test(b);
+}
+
+function fetchBrowserVersionInfo(port) {
   return new Promise((resolve) => {
+    let settled = false;
+    const done = (val) => {
+      if (!settled) {
+        settled = true;
+        resolve(val);
+      }
+    };
     const req = http.get(
-      { host: '127.0.0.1', port, path: '/json/list', timeout: 450 },
+      { host: '127.0.0.1', port, path: '/json/version', timeout: 450 },
       (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          done({ wsUrl: '', externalBrowser: false });
+          return;
+        }
         let data = '';
         res.on('data', (chunk) => (data += chunk));
         res.on('end', () => {
           try {
-            resolve(JSON.parse(data));
+            const parsed = JSON.parse(data);
+            const rawWs = typeof parsed?.webSocketDebuggerUrl === 'string' ? parsed.webSocketDebuggerUrl.trim() : '';
+            const wsUrl = rawWs.startsWith('ws://') || rawWs.startsWith('wss://') ? rawWs : '';
+            done({
+              wsUrl,
+              externalBrowser: isExternalNonHostBrowserProduct(parsed?.Browser, parsed?.['User-Agent'])
+            });
           } catch {
-            resolve([]);
+            done({ wsUrl: '', externalBrowser: false });
           }
         });
+        res.on('error', () => done({ wsUrl: '', externalBrowser: false }));
       }
     );
-    req.on('error', () => resolve([]));
+    req.on('error', () => done({ wsUrl: '', externalBrowser: false }));
     req.on('timeout', () => {
       req.destroy();
-      resolve([]);
+      done({ wsUrl: '', externalBrowser: false });
     });
   });
+}
+
+async function fetchBrowserWsUrl(port, rejectExternal = false) {
+  const info = await fetchBrowserVersionInfo(port);
+  if (rejectExternal && info.externalBrowser) return '';
+  return info.wsUrl;
+}
+
+function fetchTargetsResult(port) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (val) => {
+      if (!settled) {
+        settled = true;
+        resolve(val);
+      }
+    };
+    const req = http.get(
+      { host: '127.0.0.1', port, path: '/json/list', timeout: 450 },
+      (res) => {
+        if (res.statusCode !== 200) {
+          res.resume();
+          done({ reachable: false, targets: [] });
+          return;
+        }
+        let data = '';
+        res.on('data', (chunk) => (data += chunk));
+        res.on('end', () => {
+          try {
+            const parsed = JSON.parse(data);
+            if (Array.isArray(parsed)) {
+              done({ reachable: true, targets: parsed });
+            } else {
+              done({ reachable: false, targets: [] });
+            }
+          } catch {
+            done({ reachable: false, targets: [] });
+          }
+        });
+        res.on('error', () => done({ reachable: false, targets: [] }));
+      }
+    );
+    req.on('error', () => done({ reachable: false, targets: [] }));
+    req.on('timeout', () => {
+      req.destroy();
+      done({ reachable: false, targets: [] });
+    });
+  });
+}
+
+async function fetchTargets(port) {
+  const res = await fetchTargetsResult(port);
+  return res.targets;
 }
 
 function isAllowedOrigin(urlStr) {
   if (!urlStr || typeof urlStr !== 'string') return false;
   return activeConfig.allowedOrigins.some((prefix) => urlStr.startsWith(prefix));
+}
+
+function isEventDiscoveryEnabled() {
+  return Boolean(
+    !RUN_ONCE &&
+      !daemonExiting &&
+      activeConfig.enabled &&
+      activeConfig.modules?.cdpEventDiscovery !== false
+  );
+}
+
+function closeAllBrowserWatchers() {
+  for (const [, entry] of browserWatchers.entries()) {
+    entry.closing = true;
+    try {
+      entry.ws?.close();
+    } catch {}
+  }
+  browserWatchers.clear();
+  browserWatcherBackoffUntil.clear();
+}
+
+function isSkippedNonHost(t, nowMs = Date.now()) {
+  const id = String(t?.id || t?.targetId || '').trim();
+  if (!id) return false;
+  const skipped = skippedNonHostTargets.get(id);
+  if (!skipped || skipped.origin !== getTargetOriginKey(t.url)) return false;
+  const attempts = skipped.attempts || 1;
+  const ageMs = nowMs - (skipped.skippedAt || 0);
+  const titleHasAg = String(t.title || '').includes('Antigravity');
+  if (titleHasAg && !skipped.titleHadAg && attempts < 6 && ageMs >= 150) return false;
+  if (titleHasAg && attempts < 6 && ageMs >= 3000) return false;
+  if (attempts < 3 && ageMs >= 8000) return false;
+  return true;
+}
+
+function isCandidateTargetInfo(t, nowMs = Date.now()) {
+  if (!t || typeof t !== 'object') return false;
+  const id = String(t.id || t.targetId || '').trim();
+  if (!id) return false;
+  const type = String(t.type || '');
+  const url = String(t.url || '');
+  if (!(type === 'page' || (type === 'iframe' && url.startsWith('plugin://swarm--')))) {
+    return false;
+  }
+  if (url.startsWith('devtools://')) return false;
+  if (!isAllowedOrigin(url)) return false;
+  if (String(t.title || '').includes('Launchpad')) return false;
+  if (isSkippedNonHost(t, nowMs)) return false;
+  return true;
+}
+
+function handleBrowserTargetUpsert(info, watcherEntry) {
+  if (!isEventDiscoveryEnabled()) return;
+  if (!info || typeof info !== 'object') return;
+  const targetId = String(info.targetId || info.id || '').trim();
+  if (!targetId) return;
+
+  const url = String(info.url || '');
+  const title = String(info.title || '');
+  const prevMeta = targetMetaMap.get(targetId);
+  const nextParentId = info.parentId || prevMeta?.parentId || null;
+  targetMetaMap.set(targetId, {
+    type: info.type || prevMeta?.type || '',
+    parentId: nextParentId,
+    channel: watcherEntry.channel || prevMeta?.channel || 'stable',
+    updatedAt: Date.now()
+  });
+
+  const skipped = skippedNonHostTargets.get(targetId);
+  if (skipped && (!isAllowedOrigin(url) || getTargetOriginKey(url) !== skipped.origin)) {
+    skippedNonHostTargets.delete(targetId);
+  }
+
+  const existingAttached = attachedTargets.get(targetId);
+  if (existingAttached) {
+    if (url || title) {
+      existingAttached.updateTargetUrl?.(url, title);
+    }
+    return;
+  }
+
+  if (attachingTargetIds.has(targetId)) return;
+  if (!isCandidateTargetInfo(info, Date.now())) return;
+
+  const syntheticTarget = {
+    id: targetId,
+    type: info.type,
+    title: info.title || '',
+    url,
+    parentId: nextParentId,
+    webSocketDebuggerUrl: `ws://127.0.0.1:${watcherEntry.port}/devtools/page/${targetId}`
+  };
+  void attachTarget(syntheticTarget, watcherEntry.endpoint);
+}
+
+function handleBrowserTargetDestroyed(rawTargetId) {
+  const targetId = String(rawTargetId || '').trim();
+  if (!targetId) return;
+  if (attachingTargetIds.has(targetId)) {
+    destroyedWhileAttaching.add(targetId);
+  }
+  const entry = attachedTargets.get(targetId);
+  if (entry) {
+    attachedTargets.delete(targetId);
+    try {
+      entry.ws?.close();
+    } catch {}
+  }
+  targetThemeModes.delete(targetId);
+  targetDarkPresets.delete(targetId);
+  targetMetaMap.delete(targetId);
+  skippedNonHostTargets.delete(targetId);
+}
+
+async function ensureBrowserWatcher(endpoint, port, browserWsPath = '', isFallbackPort = false) {
+  if (!isEventDiscoveryEnabled() || !port) return false;
+  const channel = endpoint?.channel || 'stable';
+  const watcherKey = `${channel}:${port}`;
+
+  // 同通道切换了新端口时，主动关闭旧端口上的残留 BrowserWatcher
+  for (const [key, entry] of Array.from(browserWatchers.entries())) {
+    if (entry.channel === channel && entry.port !== port) {
+      entry.closing = true;
+      browserWatchers.delete(key);
+      browserWatcherBackoffUntil.delete(key);
+      try {
+        entry.ws?.close();
+      } catch {}
+    }
+  }
+
+  const desiredWsUrl = browserWsPath && browserWsPath.startsWith('/') ? `ws://127.0.0.1:${port}${browserWsPath}` : '';
+  const existing = browserWatchers.get(watcherKey);
+  if (existing && existing.ws) {
+    const isAlive = existing.ws.readyState === WebSocket.CONNECTING || existing.ws.readyState === WebSocket.OPEN;
+    const sameEndpointUrl = !desiredWsUrl || existing.wsUrl === desiredWsUrl;
+    if (isAlive && sameEndpointUrl) {
+      existing.endpoint = endpoint;
+      return true;
+    }
+    existing.closing = true;
+    browserWatchers.delete(watcherKey);
+    try {
+      existing.ws.close();
+    } catch {}
+  }
+
+  const backoffUntil = browserWatcherBackoffUntil.get(watcherKey) || 0;
+  if (Date.now() < backoffUntil) {
+    return false;
+  }
+
+  const wsUrl = desiredWsUrl || (await fetchBrowserWsUrl(port, isFallbackPort));
+  if (!wsUrl || !isEventDiscoveryEnabled()) return false;
+
+  const existingAfterAwait = browserWatchers.get(watcherKey);
+  if (
+    existingAfterAwait &&
+    existingAfterAwait.ws &&
+    (existingAfterAwait.ws.readyState === WebSocket.CONNECTING || existingAfterAwait.ws.readyState === WebSocket.OPEN) &&
+    existingAfterAwait.wsUrl === wsUrl
+  ) {
+    existingAfterAwait.endpoint = endpoint;
+    return true;
+  }
+
+  try {
+    const ws = new WebSocket(wsUrl);
+    const watcherEntry = {
+      ws,
+      wsUrl,
+      port,
+      channel,
+      endpoint,
+      reconnectAfterMs: 0,
+      closing: false
+    };
+    browserWatchers.set(watcherKey, watcherEntry);
+
+    let msgId = 1;
+    let disconnected = false;
+    const watcherConnectTimer = setTimeout(() => {
+      if (!disconnected && ws.readyState === WebSocket.CONNECTING) {
+        try {
+          ws.close();
+        } catch {}
+        handleDisconnect();
+      }
+    }, 3000);
+
+    ws.addEventListener('open', () => {
+      clearTimeout(watcherConnectTimer);
+      if (watcherEntry.closing || !isEventDiscoveryEnabled()) {
+        try {
+          ws.close();
+        } catch {}
+        return;
+      }
+      browserWatcherBackoffUntil.delete(watcherKey);
+      watcherEntry.reconnectAfterMs = 0;
+      try {
+        ws.send(
+          JSON.stringify({
+            id: msgId++,
+            method: 'Target.setDiscoverTargets',
+            params: { discover: true }
+          })
+        );
+        console.log(`[Daemon] Browser CDP watcher connected (${channel}:${port})`);
+      } catch {}
+    });
+
+    ws.addEventListener('message', (event) => {
+      if (watcherEntry.closing || !isEventDiscoveryEnabled()) return;
+      let msg;
+      try {
+        msg = JSON.parse(String(event.data));
+      } catch {
+        return;
+      }
+      if (!msg || !msg.method) return;
+      if (msg.method === 'Target.targetCreated' || msg.method === 'Target.targetInfoChanged') {
+        handleBrowserTargetUpsert(msg.params?.targetInfo, watcherEntry);
+      } else if (msg.method === 'Target.targetDestroyed') {
+        handleBrowserTargetDestroyed(msg.params?.targetId);
+      }
+    });
+
+    const handleDisconnect = () => {
+      if (disconnected) return;
+      disconnected = true;
+      clearTimeout(watcherConnectTimer);
+      if (browserWatchers.get(watcherKey) === watcherEntry) {
+        browserWatchers.delete(watcherKey);
+      }
+      if (!watcherEntry.closing && isEventDiscoveryEnabled()) {
+        const until = Date.now() + 5000;
+        watcherEntry.reconnectAfterMs = until;
+        browserWatcherBackoffUntil.set(watcherKey, until);
+      }
+    };
+
+    ws.addEventListener('close', handleDisconnect);
+    ws.addEventListener('error', handleDisconnect);
+    return true;
+  } catch {
+    if (isEventDiscoveryEnabled()) {
+      browserWatcherBackoffUntil.set(watcherKey, Date.now() + 5000);
+    }
+    return false;
+  }
 }
 
 const CASCADE_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -2075,19 +3834,41 @@ function parseMetricsSubscriptionPayload(rawPayload) {
 function attachTarget(target, endpoint) {
   const wsUrl = target.webSocketDebuggerUrl;
   if (!wsUrl) return Promise.resolve(false);
+  if (attachedTargets.has(target.id) || attachingTargetIds.has(target.id)) {
+    return Promise.resolve(false);
+  }
+  attachingTargetIds.add(target.id);
+  destroyedWhileAttaching.delete(target.id);
 
   return new Promise((resolveAttach) => {
+    let ws = null;
     let settled = false;
     const finishAttach = (ok) => {
       if (!settled) {
         settled = true;
+        clearTimeout(attachTimeout);
+        attachingTargetIds.delete(target.id);
+        if (destroyedWhileAttaching.delete(target.id)) {
+          if (attachedTargets.get(target.id)?.ws === ws) {
+            attachedTargets.delete(target.id);
+          }
+          targetThemeModes.delete(target.id);
+          targetDarkPresets.delete(target.id);
+          targetMetaMap.delete(target.id);
+          skippedNonHostTargets.delete(target.id);
+          try {
+            ws?.close();
+          } catch {}
+          resolveAttach(false);
+          return;
+        }
         resolveAttach(ok);
       }
     };
     const attachTimeout = setTimeout(() => finishAttach(false), 2500);
 
     try {
-      const ws = new WebSocket(wsUrl);
+      ws = new WebSocket(wsUrl);
       let msgId = 1;
       let watchedCascadeIds = [];
       let hasExplicitSubscription = false;
@@ -2114,15 +3895,18 @@ function attachTarget(target, endpoint) {
       let lastNewDocSig = '';
 
       const buildTargetInjectScript = () => {
-        if (!activeConfig.enabled || target.type !== 'iframe') {
+        if (target.type !== 'iframe') {
           return { script: cachedInjectScript, parentMode: '', parentDarkPreset: '' };
+        }
+        if (!activeConfig.enabled) {
+          return { script: cachedIframeInjectScript, parentMode: '', parentDarkPreset: '' };
         }
         const parentMode = resolveParentThemeMode(target, endpoint) || '';
         const parentDarkPreset = resolveParentDarkPreset(target, endpoint) || '';
         const modeVal = parentMode === 'dark' || parentMode === 'light' ? parentMode : null;
         const darkVal = parentDarkPreset === 'claude-warm' || parentDarkPreset === 'onyx' ? parentDarkPreset : null;
         return {
-          script: `window.__ag_host_theme_mode=${modeVal ? JSON.stringify(modeVal) : 'null'};\nwindow.__ag_host_dark_preset=${darkVal ? JSON.stringify(darkVal) : 'null'};\n${cachedInjectScript}`,
+          script: `window.__ag_host_theme_mode=${modeVal ? JSON.stringify(modeVal) : 'null'};\nwindow.__ag_host_dark_preset=${darkVal ? JSON.stringify(darkVal) : 'null'};\n${cachedIframeInjectScript}`,
           parentMode: modeVal || '',
           parentDarkPreset: darkVal || ''
         };
@@ -2161,6 +3945,9 @@ function attachTarget(target, endpoint) {
           expression: script,
           returnByValue: true
         });
+        if (ws.readyState !== WebSocket.OPEN || destroyedWhileAttaching.has(target.id)) {
+          return false;
+        }
         if (res?.error) {
           console.error(`[Daemon] Injection error on ${target.id}:`, res.error.message || res.error);
           return false;
@@ -2434,6 +4221,7 @@ function attachTarget(target, endpoint) {
       };
 
       let currentTargetUrl = String(target.url || '');
+      let currentTargetTitle = String(target.title || '');
       let hostConfirmed = false;
       let nonHostSettled = false;
       let pendingProbe = false;
@@ -2476,7 +4264,16 @@ function attachTarget(target, endpoint) {
         }
         const originKey = getTargetOriginKey(reasonUrl || target.url);
         if (originKey) {
-          skippedNonHostTargets.set(target.id, { origin: originKey, skippedAt: Date.now() });
+          const prevSkipped = skippedNonHostTargets.get(target.id);
+          const sameOrigin = prevSkipped && prevSkipped.origin === originKey;
+          const attempts = sameOrigin ? (prevSkipped.attempts || 1) + 1 : 1;
+          const titleHasAg = String(currentTargetTitle || target.title || '').includes('Antigravity');
+          skippedNonHostTargets.set(target.id, {
+            origin: originKey,
+            skippedAt: Date.now(),
+            attempts,
+            titleHadAg: Boolean((sameOrigin && prevSkipped.titleHadAg) || titleHasAg)
+          });
         }
         if (evalScriptId && ws.readyState === WebSocket.OPEN) {
           const idToRemove = evalScriptId;
@@ -2502,6 +4299,7 @@ function attachTarget(target, endpoint) {
         hostConfirmed = true;
         pendingProbe = false;
         clearPendingTimer();
+        skippedNonHostTargets.delete(target.id);
         const entry = attachedTargets.get(target.id);
         if (entry && entry.ws === ws) {
           entry.hostConfirmed = true;
@@ -2521,11 +4319,12 @@ function attachTarget(target, endpoint) {
         }
         if (!bindingsAdded) {
           bindingsAdded = true;
-          await send('Runtime.addBinding', { name: '__agRequestMetrics' });
           if (target.type === 'page') {
+            await send('Runtime.addBinding', { name: '__agRequestMetrics' });
             await send('Runtime.addBinding', { name: '__agRequestHardReload' });
             await send('Runtime.addBinding', { name: '__agSetDarkPreset' });
             await send('Runtime.addBinding', { name: '__agSyncHostThemeMode' });
+            await send('Runtime.addBinding', { name: '__agRequestTokenAnalytics' });
           }
         }
         if (ws.readyState !== WebSocket.OPEN || nonHostSettled) {
@@ -2534,13 +4333,16 @@ function attachTarget(target, endpoint) {
         }
         await updateNewDocScript(true);
         const ok = await inject();
-        await syncMetricsForSession(true);
+        if (target.type === 'page') {
+          await syncMetricsForSession(true);
+        }
         initialAttachDone = true;
         clearTimeout(attachTimeout);
         finishAttach(ok);
         return ok;
       };
 
+      const PENDING_RETRY_DELAYS_MS = [30, 50, 100, 200];
       const schedulePendingRetry = () => {
         clearPendingTimer();
         if (!pendingProbe || hostConfirmed || nonHostSettled || ws.readyState !== WebSocket.OPEN) return;
@@ -2558,11 +4360,12 @@ function attachTarget(target, endpoint) {
           finishAttach(false);
           return;
         }
+        const delayMs = PENDING_RETRY_DELAYS_MS[Math.min(pendingRetryCount, PENDING_RETRY_DELAYS_MS.length - 1)];
         pendingRetryCount += 1;
         pendingRetryTimer = setTimeout(() => {
           pendingRetryTimer = null;
           void recheckPendingHost();
-        }, 200);
+        }, delayMs);
       };
 
       const recheckPendingHost = async () => {
@@ -2613,6 +4416,10 @@ function attachTarget(target, endpoint) {
       };
 
       ws.addEventListener('open', async () => {
+        if (destroyedWhileAttaching.has(target.id) || ws.readyState !== WebSocket.OPEN || nonHostSettled) {
+          finishAttach(false);
+          return;
+        }
         if (isExemptInternalTarget(target)) {
           await promoteToHost();
           return;
@@ -2621,9 +4428,15 @@ function attachTarget(target, endpoint) {
           runtimeEnabled = true;
           await send('Runtime.enable');
         }
-        if (ws.readyState !== WebSocket.OPEN || nonHostSettled) return;
+        if (ws.readyState !== WebSocket.OPEN || nonHostSettled || destroyedWhileAttaching.has(target.id)) {
+          finishAttach(false);
+          return;
+        }
         const kind = await probeHostKind();
-        if (ws.readyState !== WebSocket.OPEN || nonHostSettled) return;
+        if (ws.readyState !== WebSocket.OPEN || nonHostSettled || destroyedWhileAttaching.has(target.id)) {
+          finishAttach(false);
+          return;
+        }
         if (kind === 'host') {
           await promoteToHost();
           return;
@@ -2637,7 +4450,10 @@ function attachTarget(target, endpoint) {
           pageEnabled = true;
           await send('Page.enable');
         }
-        if (ws.readyState !== WebSocket.OPEN || nonHostSettled) return;
+        if (ws.readyState !== WebSocket.OPEN || nonHostSettled || destroyedWhileAttaching.has(target.id)) {
+          finishAttach(false);
+          return;
+        }
         await recheckPendingHost();
       });
 
@@ -2716,6 +4532,53 @@ function attachTarget(target, endpoint) {
             }
             return;
           }
+          if (msg.method === 'Runtime.bindingCalled' && msg.params?.name === '__agRequestTokenAnalytics') {
+            if (
+              !hostConfirmed ||
+              target.type !== 'page' ||
+              !activeConfig.enabled ||
+              !activeConfig.modules.tokenAnalytics ||
+              !DatabaseSync
+            ) {
+              return;
+            }
+            let req = {};
+            try {
+              req = msg.params.payload ? JSON.parse(String(msg.params.payload)) : {};
+            } catch {}
+            const reqId = String(req?.reqId || '');
+            const maxDays = Number(req?.maxDays) > 0 ? Number(req.maxDays) : 365;
+            const force = req?.force === 'hard' ? 'hard' : Boolean(req?.force);
+            void (async () => {
+              let payloadJson = '';
+              try {
+                const data = await runTokenAnalyticsQuery(endpoint, { maxDays, force });
+                if (tokenAnalyticsLastJsonCache.dataRef === data && tokenAnalyticsLastJsonCache.jsonStr) {
+                  payloadJson = tokenAnalyticsLastJsonCache.jsonStr;
+                } else {
+                  payloadJson = JSON.stringify({ ok: true, data });
+                  tokenAnalyticsLastJsonCache = { dataRef: data, jsonStr: payloadJson };
+                }
+              } catch (err) {
+                payloadJson = JSON.stringify({
+                  ok: false,
+                  error: err?.message || String(err || 'token analytics failed')
+                });
+              }
+              if (ws.readyState === WebSocket.OPEN) {
+                const safeJsonLiteral = JSON.stringify(payloadJson)
+                  .replace(/\u2028/g, '\\u2028')
+                  .replace(/\u2029/g, '\\u2029');
+                try {
+                  await send('Runtime.evaluate', {
+                    expression: `if (typeof window.__ag_on_token_analytics === 'function') { window.__ag_on_token_analytics(${JSON.stringify(reqId)}, JSON.parse(${safeJsonLiteral})); }`,
+                    returnByValue: false
+                  });
+                } catch {}
+              }
+            })();
+            return;
+          }
           if (
             msg.method === 'Page.frameNavigated' &&
             (!msg.params?.frame?.parentId || msg.params.frame.id === target.id) &&
@@ -2769,6 +4632,7 @@ function attachTarget(target, endpoint) {
         ws,
         type: target.type,
         parentId: target.parentId || null,
+        attachedAt: Date.now(),
         send,
         updateNewDocScript,
         inject,
@@ -2781,8 +4645,25 @@ function attachTarget(target, endpoint) {
         set hostConfirmed(v) {
           hostConfirmed = Boolean(v);
         },
-        updateTargetUrl: (u) => {
-          if (u) currentTargetUrl = String(u);
+        updateTargetUrl: (u, nextTitle = '') => {
+          let changed = false;
+          if (nextTitle) {
+            const tStr = String(nextTitle);
+            if (tStr !== currentTargetTitle) {
+              currentTargetTitle = tStr;
+              if (tStr.includes('Antigravity')) changed = true;
+            }
+          }
+          if (u) {
+            const nextUrl = String(u);
+            if (nextUrl !== currentTargetUrl) {
+              currentTargetUrl = nextUrl;
+              changed = true;
+            }
+          }
+          if (changed && pendingProbe && !hostConfirmed && !nonHostSettled && ws.readyState === WebSocket.OPEN) {
+            void recheckPendingHost();
+          }
         },
         setActiveCascade: (cid) => {
           const ids = normalizeCascadeIdList(cid);
@@ -2804,6 +4685,7 @@ let syncTickCount = 0;
 const fallbackBackoffUntil = new Map();
 const CDP_RELAUNCH_GUARD_FILE = path.join(os.tmpdir(), 'ag-cdp-relaunch-guard.json');
 const ignoredUnflaggedHostPids = new Set();
+const exemptedHostPidByChannel = new Map();
 const NON_HOST_CMD_RE = /--type=|--crashpad|--utility-sub-type=|--import=|sidecar_sdk|--ms-enable-electron-run-as-node/i;
 let isCdpRelaunching = false;
 
@@ -2842,12 +4724,74 @@ function pruneIgnoredHostPids() {
       ignoredUnflaggedHostPids.delete(pid);
     }
   }
+  for (const [ch, pid] of Array.from(exemptedHostPidByChannel.entries())) {
+    if (!isPidAlive(pid)) {
+      exemptedHostPidByChannel.delete(ch);
+    }
+  }
 }
 
-function probeRunningHostProcesses(channelMode = 'auto') {
+function readPosixSingletonLockState(portFile) {
+  if (!portFile) return { status: 'unknown', pid: 0 };
+  const userDataDir = path.dirname(portFile);
+  if (!fs.existsSync(userDataDir)) return { status: 'absent', pid: 0 };
+  const lockPath = path.join(userDataDir, 'SingletonLock');
+  try {
+    const lst = fs.lstatSync(lockPath, { throwIfNoEntry: false });
+    if (!lst) return { status: 'absent', pid: 0 };
+    if (!lst.isSymbolicLink()) return { status: 'unknown', pid: 0 };
+    const target = String(fs.readlinkSync(lockPath) || '');
+    const m = target.match(/-(\d+)$/);
+    if (!m) return { status: 'unknown', pid: 0 };
+    const pid = parseInt(m[1], 10);
+    if (!pid || pid <= 0) return { status: 'absent', pid: 0 };
+    return isPidAlive(pid) ? { status: 'alive', pid } : { status: 'dead', pid };
+  } catch {
+    return { status: 'unknown', pid: 0 };
+  }
+}
+
+function probeRunningHostProcesses(channelMode = 'auto', endpoints = [], reachableChannels = null) {
   const allowStable = channelMode !== 'insiders';
   const allowInsiders = channelMode !== 'stable';
-  const res = spawnSync('ps', ['-axo', 'pid=,etime=,command='], {
+
+  // 零子进程空闲预筛（解决客户端未启动或已豁免时每 2.5s fork `ps` 被 launchd 标记 inefficient 的 CPU 空转缺陷）：
+  // Electron 主进程启动首行即调用 app.requestSingleInstanceLock() 在 userDataDir 下创建 SingletonLock -> <host>-<pid> 软链。
+  // 仅当通道无活跃可达 CDP、无存活豁免 PID 且 SingletonLock 指向未处理的存活 PID（或罕见非软链残留）时才按需执行 ps。
+  const targetPids = [];
+  let needFullScan = false;
+  const candidateChannels = [];
+  if (allowStable) candidateChannels.push('stable');
+  if (allowInsiders) candidateChannels.push('insiders');
+
+  for (const ch of candidateChannels) {
+    const ep = endpoints.find((e) => e.channel === ch);
+    if (ch === 'insiders' && ep && ep.channelInstalled === false) continue;
+    if (reachableChannels ? reachableChannels.has(ch) : ep && readPort(ep.portFile)) continue;
+    const exemptPid = exemptedHostPidByChannel.get(ch);
+    if (exemptPid && isPidAlive(exemptPid)) continue;
+
+    if (ep && ep.portFile) {
+      const lockState = readPosixSingletonLockState(ep.portFile);
+      if (lockState.status === 'absent' || lockState.status === 'dead') {
+        continue;
+      }
+      if (lockState.status === 'alive') {
+        if (!ignoredUnflaggedHostPids.has(lockState.pid) && !targetPids.includes(lockState.pid)) {
+          targetPids.push(lockState.pid);
+        }
+        continue;
+      }
+    }
+    needFullScan = true;
+  }
+
+  if (!needFullScan && targetPids.length === 0) return [];
+
+  const psArgs = needFullScan
+    ? ['-axo', 'pid=,etime=,command=']
+    : ['-p', targetPids.join(','), '-o', 'pid=,etime=,command='];
+  const res = spawnSync('ps', psArgs, {
     encoding: 'utf8',
     timeout: 2500
   });
@@ -2879,7 +4823,7 @@ function probeRunningHostProcesses(channelMode = 'auto') {
   return found;
 }
 
-function hasActiveConversationWalWrite(endpoint, windowSec = 15) {
+function hasActiveConversationWalWrite(endpoint, windowSec = 15, minWalMtimeMs = 0) {
   if (!endpoint || !endpoint.conversationsDir) return false;
   const now = Date.now();
   const windowMs = windowSec * 1000;
@@ -2888,7 +4832,12 @@ function hasActiveConversationWalWrite(endpoint, windowSec = 15) {
     for (const name of fs.readdirSync(endpoint.conversationsDir)) {
       if (!name.endsWith('.db-wal')) continue;
       const st = fs.statSync(path.join(endpoint.conversationsDir, name), { throwIfNoEntry: false });
-      if (st && st.size > 4096 && now - st.mtimeMs < windowMs) {
+      if (
+        st &&
+        st.size > 4096 &&
+        now - st.mtimeMs < windowMs &&
+        (!minWalMtimeMs || st.mtimeMs >= minWalMtimeMs)
+      ) {
         return true;
       }
     }
@@ -2896,7 +4845,7 @@ function hasActiveConversationWalWrite(endpoint, windowSec = 15) {
   return false;
 }
 
-function maybeAutoRelaunchColdStartWithoutCdp() {
+function maybeAutoRelaunchColdStartWithoutCdp(reachableChannels = null) {
   if (
     SAFE_MODE ||
     RUN_ONCE ||
@@ -2908,7 +4857,7 @@ function maybeAutoRelaunchColdStartWithoutCdp() {
   }
 
   pruneIgnoredHostPids();
-  const hostProcs = probeRunningHostProcesses(activeConfig.channel);
+  const hostProcs = probeRunningHostProcesses(activeConfig.channel, activeConfig.endpoints, reachableChannels);
   if (hostProcs.length === 0) return false;
 
   for (const proc of hostProcs) {
@@ -2916,20 +4865,23 @@ function maybeAutoRelaunchColdStartWithoutCdp() {
     if (ignoredUnflaggedHostPids.has(proc.pid)) continue;
 
     const ep = activeConfig.endpoints.find((e) => e.channel === proc.channel) || activeConfig.endpoints[0];
-    if (ep && readPort(ep.portFile)) continue;
+    if (reachableChannels ? reachableChannels.has(proc.channel) : ep && readPort(ep.portFile)) continue;
 
     const maxWindowSec = proc.hasUpdatedFlag ? 25 : 12;
     if (proc.elapsedSec > maxWindowSec) {
       ignoredUnflaggedHostPids.add(proc.pid);
+      exemptedHostPidByChannel.set(proc.channel, proc.pid);
       const msg = `[Daemon] Detected running Antigravity (${proc.channel}, PID ${proc.pid}, uptime ${proc.elapsedSec}s) started without --remote-debugging-port; skipping auto-relaunch to protect active session. Run \`node ${path.join(ROOT_DIR, 'install.mjs')} relaunch\` when idle.`;
       console.log(msg);
       logDaemonEvent(msg);
       continue;
     }
 
-    if (hasActiveConversationWalWrite(ep, 15)) {
+    const procBirthMs = Number.isFinite(proc.elapsedSec) ? Date.now() - proc.elapsedSec * 1000 + 800 : 0;
+    if (hasActiveConversationWalWrite(ep, 15, procBirthMs)) {
       ignoredUnflaggedHostPids.add(proc.pid);
-      const msg = `[Daemon] Skipped cold-start auto-relaunch for PID ${proc.pid}: active conversation WAL write detected within 15s.`;
+      exemptedHostPidByChannel.set(proc.channel, proc.pid);
+      const msg = `[Daemon] Skipped cold-start auto-relaunch for PID ${proc.pid}: active conversation WAL write detected after process start.`;
       console.log(msg);
       logDaemonEvent(msg);
       continue;
@@ -2940,6 +4892,7 @@ function maybeAutoRelaunchColdStartWithoutCdp() {
     const lastAt = Number(guard.lastRelaunchAtMs) || 0;
     if (handledPids.includes(proc.pid) || Date.now() - lastAt < 60000) {
       ignoredUnflaggedHostPids.add(proc.pid);
+      exemptedHostPidByChannel.set(proc.channel, proc.pid);
       logDaemonEvent(
         `Skipped cold-start auto-relaunch for PID ${proc.pid}: guard cooldown active (lastRelaunchDeltaMs=${Date.now() - lastAt}).`
       );
@@ -3034,9 +4987,23 @@ async function sync() {
   checkPidFileOwnership();
   if (isSyncing) return;
   isSyncing = true;
+  const syncStartMs = Date.now();
   syncTickCount = (syncTickCount + 1) % 6000;
   try {
-    if (syncTickCount % 24 === 1) trimDaemonLogsIfNeeded();
+    if (syncTickCount % 24 === 1) {
+      trimDaemonLogsIfNeeded();
+      if (
+        !inFlightTokenAnalyticsPromise &&
+        !tokenAnalyticsPersistTimer &&
+        (tokenAnalyticsDbCache.size > 0 || tokenAnalyticsSummariesCache.size > 0) &&
+        Date.now() - lastTokenAnalyticsAccessMs > 600000
+      ) {
+        tokenAnalyticsDbCache.clear();
+        tokenAnalyticsSummariesCache.clear();
+        tokenAnalyticsDiskLoaded = false;
+        tokenAnalyticsLastJsonCache = { dataRef: null, jsonStr: '' };
+      }
+    }
     const bundleChanged = rebuildBundleIfNeeded();
     if (!coreIntegrityOk || !cachedInjectScript) {
       return;
@@ -3045,58 +5012,110 @@ async function sync() {
       targetThemeModes.clear();
       targetDarkPresets.clear();
     }
+    if (!isEventDiscoveryEnabled()) {
+      closeAllBrowserWatchers();
+    }
     const shouldHeartbeatCheck = bundleChanged || syncTickCount % 6 === 1;
 
     const activeTargetIds = new Set();
     const seenRawTargetIds = new Set();
+    const fullScannedChannels = new Set();
+    const reachableChannels = new Set();
     const pendingPages = [];
     const pendingIframes = [];
+    const fastPathPageEntries = [];
 
     const probedPorts = new Set();
     const nowMs = Date.now();
     for (const endpoint of activeConfig.endpoints) {
-      let port = readPort(endpoint.portFile);
+      const portInfo = readPortInfo(endpoint.portFile);
+      let activePort = portInfo.port;
+      let activeBrowserWsPath = portInfo.browserWsPath;
+
+      // BrowserWatcher 事件流在线时的非心跳拍快路径：跳过每 2.5s 的 HTTP /json/list 全量枚举（削减 83% 轮询 IPC），
+      // 目标创建/销毁由 Target.setDiscoverTargets 毫秒级实时推送，每 6 拍（15s）或配置热更新时仍执行完整 HTTP 对账。
+      const liveWatcher =
+        !RUN_ONCE && !shouldHeartbeatCheck && isEventDiscoveryEnabled() && activePort
+          ? browserWatchers.get(`${endpoint.channel}:${activePort}`)
+          : null;
+      if (liveWatcher && liveWatcher.ws && liveWatcher.ws.readyState === WebSocket.OPEN) {
+        probedPorts.add(activePort);
+        reachableChannels.add(endpoint.channel);
+        liveWatcher.endpoint = endpoint;
+        for (const [id, entry] of attachedTargets.entries()) {
+          if ((entry.endpoint?.channel || 'stable') !== endpoint.channel) continue;
+          const rs = entry.ws?.readyState;
+          if (rs === WebSocket.OPEN || rs === WebSocket.CONNECTING) {
+            activeTargetIds.add(id);
+            if (entry.hostConfirmed && entry.type !== 'iframe' && entry.syncMetricsForSession) {
+              fastPathPageEntries.push(entry);
+            }
+          }
+        }
+        continue;
+      }
+
+      let fromPortFile = false;
+      let reachable = false;
       let targets = [];
-      if (port && !probedPorts.has(port)) {
-        probedPorts.add(port);
-        targets = await fetchTargets(port);
+      if (activePort && !probedPorts.has(activePort)) {
+        probedPorts.add(activePort);
+        const res = await fetchTargetsResult(activePort);
+        reachable = res.reachable;
+        targets = res.targets;
+        if (reachable) fromPortFile = true;
       }
       if (
-        targets.length === 0 &&
+        !reachable &&
         endpoint.channelInstalled !== false &&
         endpoint.fallbackPort &&
         !probedPorts.has(endpoint.fallbackPort) &&
         (RUN_ONCE || nowMs >= (fallbackBackoffUntil.get(endpoint.fallbackPort) || 0))
       ) {
         probedPorts.add(endpoint.fallbackPort);
-        targets = await fetchTargets(endpoint.fallbackPort);
-        if (targets.length === 0) {
+        const res = await fetchTargetsResult(endpoint.fallbackPort);
+        if (!res.reachable) {
           fallbackBackoffUntil.set(endpoint.fallbackPort, nowMs + 10000);
         } else {
-          fallbackBackoffUntil.delete(endpoint.fallbackPort);
+          const verInfo = await fetchBrowserVersionInfo(endpoint.fallbackPort);
+          if (verInfo.externalBrowser) {
+            fallbackBackoffUntil.set(endpoint.fallbackPort, nowMs + 10000);
+          } else {
+            reachable = true;
+            targets = res.targets;
+            fallbackBackoffUntil.delete(endpoint.fallbackPort);
+            activePort = endpoint.fallbackPort;
+            activeBrowserWsPath = '';
+          }
         }
+      }
+      if (!reachable) continue;
+
+      fullScannedChannels.add(endpoint.channel);
+      if (fromPortFile || targets.length > 0) {
+        reachableChannels.add(endpoint.channel);
+      }
+      if (isEventDiscoveryEnabled() && activePort) {
+        await ensureBrowserWatcher(endpoint, activePort, activeBrowserWsPath, !fromPortFile);
       }
       if (targets.length === 0) continue;
 
       for (const t of targets) {
         if (!t?.id) continue;
         seenRawTargetIds.add(t.id);
-        targetMetaMap.set(t.id, { type: t.type, parentId: t.parentId || null, channel: endpoint.channel });
+        targetMetaMap.set(t.id, {
+          type: t.type,
+          parentId: t.parentId || null,
+          channel: endpoint.channel,
+          updatedAt: Date.now()
+        });
         const skipped = skippedNonHostTargets.get(t.id);
         if (skipped && (!isAllowedOrigin(t.url) || getTargetOriginKey(t.url) !== skipped.origin)) {
           skippedNonHostTargets.delete(t.id);
         }
       }
 
-      const pages = targets.filter(
-        (t) =>
-          (t.type === 'page' || (t.type === 'iframe' && String(t.url || '').startsWith('plugin://swarm--'))) &&
-          t.webSocketDebuggerUrl &&
-          !String(t.url || '').startsWith('devtools://') &&
-          isAllowedOrigin(t.url) &&
-          !String(t.title || '').includes('Launchpad') &&
-          skippedNonHostTargets.get(t.id)?.origin !== getTargetOriginKey(t.url)
-      );
+      const pages = targets.filter((t) => Boolean(t.webSocketDebuggerUrl) && isCandidateTargetInfo(t, nowMs));
 
       for (const page of pages) {
         activeTargetIds.add(page.id);
@@ -3112,18 +5131,22 @@ async function sync() {
       const attachPromises = [];
       for (const { page, endpoint } of items) {
         if (!attachedTargets.has(page.id)) {
-          attachPromises.push(attachTarget(page, endpoint));
+          if (!attachingTargetIds.has(page.id)) {
+            attachPromises.push(attachTarget(page, endpoint));
+          }
         } else {
           const entry = attachedTargets.get(page.id);
           entry.endpoint = endpoint;
           entry.parentId = page.parentId || entry.parentId || null;
-          entry.updateTargetUrl?.(page.url);
+          entry.updateTargetUrl?.(page.url, page.title);
           if (entry.hostConfirmed) {
             if (bundleChanged && entry.updateNewDocScript) {
               await entry.updateNewDocScript();
             }
             if (shouldHeartbeatCheck && entry.checkAndInject) await entry.checkAndInject();
-            if (entry.syncMetricsForSession) await entry.syncMetricsForSession(bundleChanged);
+            if (entry.type !== 'iframe' && entry.syncMetricsForSession) {
+              await entry.syncMetricsForSession(bundleChanged);
+            }
           }
         }
       }
@@ -3135,15 +5158,23 @@ async function sync() {
     // 先同步宿主 page 目标以获取权威深浅色状态，再同步子 Swarm iframe（确保 --once 与冷启动零闪烁）
     await syncTargetBatch(pendingPages);
     await syncTargetBatch(pendingIframes);
-
-    // 2.33.0+ 冷启动无标记自愈（M2）：仅在 0 活跃 CDP 目标时按严苛冷启动时间窗探测并自动接力重启
-    if (pendingPages.length === 0 && attachedTargets.size === 0) {
-      maybeAutoRelaunchColdStartWithoutCdp();
+    for (const entry of fastPathPageEntries) {
+      if (entry.hostConfirmed && entry.ws?.readyState === WebSocket.OPEN && entry.syncMetricsForSession) {
+        await entry.syncMetricsForSession(false);
+      }
     }
 
-    // 清理已关闭的目标连接
+    // 2.33.0+ 冷启动无标记自愈（M2）：仅在 0 活跃 CDP 目标且无可达 CDP 通道时按严苛冷启动时间窗探测并自动接力重启
+    if (pendingPages.length === 0 && attachedTargets.size === 0 && reachableChannels.size === 0) {
+      maybeAutoRelaunchColdStartWithoutCdp(reachableChannels);
+    }
+
+    // 清理已关闭的目标连接（防竞态误杀：跳过本轮快照开始后由 BrowserWS 新附着的目标）
     for (const [id, entry] of attachedTargets.entries()) {
       if (!activeTargetIds.has(id)) {
+        if (entry.attachedAt && entry.attachedAt >= syncStartMs) {
+          continue;
+        }
         try {
           entry.ws.close();
         } catch {}
@@ -3152,19 +5183,35 @@ async function sync() {
         targetDarkPresets.delete(id);
       }
     }
-    if (seenRawTargetIds.size > 0) {
-      for (const id of skippedNonHostTargets.keys()) {
-        if (!seenRawTargetIds.has(id)) {
+    if (fullScannedChannels.size > 0) {
+      for (const [id, skipped] of skippedNonHostTargets.entries()) {
+        const metaCh = targetMetaMap.get(id)?.channel;
+        if ((!metaCh || fullScannedChannels.has(metaCh)) && !seenRawTargetIds.has(id) && (skipped?.skippedAt || 0) < syncStartMs) {
           skippedNonHostTargets.delete(id);
         }
       }
-      for (const id of targetMetaMap.keys()) {
-        if (!seenRawTargetIds.has(id)) {
+      for (const [id, meta] of targetMetaMap.entries()) {
+        if (
+          (!meta?.channel || fullScannedChannels.has(meta.channel)) &&
+          !seenRawTargetIds.has(id) &&
+          !attachedTargets.has(id) &&
+          !attachingTargetIds.has(id) &&
+          (meta?.updatedAt || 0) < syncStartMs
+        ) {
           targetMetaMap.delete(id);
         }
       }
-    } else if (attachedTargets.size === 0) {
-      targetMetaMap.clear();
+    } else if (reachableChannels.size === 0 && attachedTargets.size === 0 && attachingTargetIds.size === 0) {
+      for (const [id, skipped] of skippedNonHostTargets.entries()) {
+        if ((skipped?.skippedAt || 0) < syncStartMs) {
+          skippedNonHostTargets.delete(id);
+        }
+      }
+      for (const [id, meta] of targetMetaMap.entries()) {
+        if ((meta?.updatedAt || 0) < syncStartMs) {
+          targetMetaMap.delete(id);
+        }
+      }
     }
   } finally {
     isSyncing = false;
