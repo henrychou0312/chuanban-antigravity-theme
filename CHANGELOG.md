@@ -4,6 +4,26 @@
 
 ---
 
+## [v6.0.1-macos-hardened] - 2026-11-23
+
+> **适用平台**：仅限 **macOS（`darwin`）**（Antigravity `2.34.0+` / `2.33.x`，向下完全兼容 `2.32.x` / `2.31.x` / `2.30.0`）  
+> **变更定位**：同步上游 [`Anarcadia/chuanban-antigravity-theme-patch`](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) `v6.0.1`（`1de4319` ~ `526500f`）全部 macOS 适用更新（完整保留 macOS-only 精简架构与运行时安全加固；`29df839` 暖纸深色配色修复已于上一版本合入）
+
+### Fixed（新建会话/窗口底部实时指标胶囊自愈加固、单帧自动补挂与首轮采样状态）
+- **订阅回执自愈闭环与守护进程单飞合并锁（`core/runtime.js` / `core/daemon.mjs`）**：
+  - 浏览器端新增 `sendMetricsSubscription()`，仅在 `__agRequestMetrics` 绑定调用成功后更新 `window.__ag_watched_cascade_sig` 与 `lastMetricsReqAt`；对尚未收到守护进程回执（`!(cid in metricsById)`）的活跃会话在 `>= 1200ms` 后自动重试订阅；
+  - 守护进程端为 `syncMetricsForSession` 引入单飞合并锁（`metricsSyncInFlight` + `queuedMetricsSync`，并发合并 `force` 与 `skipDomEval` 标志），彻底消除早期注入或跨窗切换导致的「必须切去其他会话再切回才出指标」锁死问题。
+- **输入框重建单帧（`<40ms`）自动补挂（`core/runtime.js`）**：
+  - 新增零流式开销的输入框结构观察器 `ensureMetricsDomObserver()`（通过 `METRICS_DOM_SKIP_SEL` 自动跳过 `[data-markdown-root]`、代码块、Monaco、终端与侧栏列表等高频文本流），当呼出 `Swarm` / Artifact 侧栏或权限卡切换触发 React 重建输入框时通过 `scheduleMetricsDomSync()` 单帧自动补挂胶囊，消除最长 `3s` 的轮询空窗期；清理函数与 `modules.metrics: false` 关闭路径同步重置观察器状态。
+- **新会话首轮「采样中…」低干扰占位、停笔即时拉取与 `conversation-view` 优先匹配（`core/runtime.js`）**：
+  - 新开会话首轮生成期间（检测到 `[data-testid="input-cancel-button"]` 或其移除后 `2.5s` 过渡窗内）尚无历史 `gen_metadata` 时展示圆环 + `采样中…` / `Measuring…`（支持 `[ EN | 中文 ]` 切换时通过 `refreshSelfOwnedUiLang()` 即刻刷新文案）；
+  - 检测到 `input-cancel-button` 移除（模型停笔瞬间）时在 `100ms` 与 `450ms` 主动触发 SQLite 指标拉取，无需等待 `2.5s` 后台轮询；
+  - 收窄 `resolveBoxCascadeId()` 优先匹配 `[data-testid="conversation-view"][data-cascade-id]`，防止内层非 UUID 属性遮蔽；`__ag_render_metrics` 优先重解析当前输入框 `cascadeId` 避免旧属性残留。
+- **版本元数据同步（`install.mjs` / `core/manifest.json` / `README.md` / `SKILL.md`）**：
+  - 对齐 `BASE_VERSION` / `PATCH_VERSION` 为 `20261123-v6.0.1`、可选启动器 `CFBundleShortVersionString` 为 `6.0.1`（`CFBundleVersion: 601`），并重建 `core/manifest.json`（`version: "6.0.1"`、`platform: "darwin"`）四件套 SHA-256 校验清单。
+
+---
+
 ## [v6.0.0-macos-hardened] - 2026-11-23
 
 > **适用平台**：仅限 **macOS（`darwin`）**（Antigravity `2.34.0+` / `2.33.x`，向下完全兼容 `2.32.x` / `2.31.x` / `2.30.0`）  

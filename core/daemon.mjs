@@ -2,7 +2,7 @@
 /**
  * chuanban-antigravity-theme-patch · macOS CDP Theme & Live Metrics Daemon (core/daemon.mjs)
  *
- * 架构特性（v6.0.0 · macOS 专属）：
+ * 架构特性（v6.0.1 · macOS 专属）：
  * 1. 动态 Node 分级：
  *    - Node >= 22.0：完整启用莫兰迪古典矿物默认视觉与外观五段式主题秒切（native / absolutely / morandi / claude-warm / onyx）、[ EN | 中文 ] 零重刷语言热切换、Google Sans Flex 原生西文引擎 × 更纱黑体 UI 精密字重桥接 + Anthropic Serif 正文、单层 2px 合并矿物输入框、1965条母语级汉化、宿主独占指纹门禁、死锁与冷启动兜底包自愈、Browser 级 CDP 事件发现及 2.33.0+ ~ 2.34.0+ CDP Opt-in 自动接力（M2 · SingletonLock 零子进程空闲短路）。
  *    - Node >= 22.13：动态 `await import('node:sqlite')` 解锁底部实时会话指标胶囊（O(1) 增量尾行解析）与「系统设置 → Token 统计」多维增量归因分析；低版本优雅降级绝不崩溃。
@@ -231,7 +231,7 @@ function resolveActiveChannelEndpoints(channelMode = 'auto', userCfg = {}) {
 // ============================================================================
 // 2. 动态构建注入载荷（支持 core/ + user/ 实时合并与热更新签名）
 // ============================================================================
-const BASE_VERSION = '20261123-v6.0.0';
+const BASE_VERSION = '20261123-v6.0.1';
 let cachedBundleSig = '';
 let cachedInjectScript = '';
 let cachedIframeInjectScript = '';
@@ -4361,7 +4361,10 @@ function attachTarget(target, endpoint) {
         }
       };
 
-      const syncMetricsForSession = async (force = false, skipDomEval = false) => {
+      let metricsSyncInFlight = null;
+      let queuedMetricsSync = null;
+
+      const syncMetricsForSessionInner = async (force = false, skipDomEval = false) => {
         if (target.type === 'iframe' || !DatabaseSync || !activeConfig.modules.metrics || !activeConfig.enabled) return;
 
         // 仅在尚未获知前端订阅或强制重同步时向前端发起 Runtime.evaluate，日常靠 __agRequestMetrics 绑定事件实时驱动
@@ -4484,6 +4487,32 @@ function attachTarget(target, endpoint) {
             }
           }
         }
+      };
+
+      const syncMetricsForSession = async (force = false, skipDomEval = false) => {
+        if (metricsSyncInFlight) {
+          queuedMetricsSync = {
+            force: Boolean(queuedMetricsSync?.force || force),
+            skipDomEval: queuedMetricsSync ? Boolean(queuedMetricsSync.skipDomEval && skipDomEval) : Boolean(skipDomEval)
+          };
+          return metricsSyncInFlight;
+        }
+        metricsSyncInFlight = (async () => {
+          let curForce = force;
+          let curSkip = skipDomEval;
+          try {
+            while (true) {
+              await syncMetricsForSessionInner(curForce, curSkip);
+              if (!queuedMetricsSync) break;
+              curForce = queuedMetricsSync.force;
+              curSkip = queuedMetricsSync.skipDomEval;
+              queuedMetricsSync = null;
+            }
+          } finally {
+            metricsSyncInFlight = null;
+          }
+        })();
+        return metricsSyncInFlight;
       };
 
       const checkAndInject = async () => {
