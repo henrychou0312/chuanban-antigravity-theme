@@ -2,9 +2,9 @@
 /**
  * chuanban-antigravity-theme-patch · macOS CDP Theme & Live Metrics Daemon (core/daemon.mjs)
  *
- * 架构特性（v6.0.1 · macOS 专属）：
+ * 架构特性（v6.0.3 · macOS 专属）：
  * 1. 动态 Node 分级：
- *    - Node >= 22.0：完整启用莫兰迪古典矿物默认视觉与外观五段式主题秒切（native / absolutely / morandi / claude-warm / onyx）、[ EN | 中文 ] 零重刷语言热切换、Google Sans Flex 原生西文引擎 × 更纱黑体 UI 精密字重桥接 + Anthropic Serif 正文、单层 2px 合并矿物输入框、1965条母语级汉化、宿主独占指纹门禁、死锁与冷启动兜底包自愈、Browser 级 CDP 事件发现及 2.33.0+ ~ 2.34.0+ CDP Opt-in 自动接力（M2 · SingletonLock 零子进程空闲短路）。
+ *    - Node >= 22.0：完整启用莫兰迪古典矿物默认视觉与外观五段式主题秒切（native / absolutely / morandi / claude-warm / onyx）及独立「跟随系统」开关、[ EN | 中文 ] 零重刷语言热切换、Google Sans Flex 原生西文引擎 × 更纱黑体 UI 精密字重桥接 + Anthropic Serif 正文、单层 2px 合并矿物输入框、2210条母语级汉化（含 Swarm 零闪烁护盾）、宿主独占指纹门禁、死锁与冷启动兜底包自愈、Browser 级 CDP 事件发现及 2.33.0+ ~ 2.35.1+ CDP Opt-in 自动接力（M2 · SingletonLock 零子进程空闲短路与启动参数/代理保留）。
  *    - Node >= 22.13：动态 `await import('node:sqlite')` 解锁底部实时会话指标胶囊（O(1) 增量尾行解析）与「系统设置 → Token 统计」多维增量归因分析；低版本优雅降级绝不崩溃。
  * 2. 模块化与热重载：
  *    - 周期性检测 `user/config.json`、`user/custom.css`、`user/i18n.override.json` 的 mtime，
@@ -231,7 +231,7 @@ function resolveActiveChannelEndpoints(channelMode = 'auto', userCfg = {}) {
 // ============================================================================
 // 2. 动态构建注入载荷（支持 core/ + user/ 实时合并与热更新签名）
 // ============================================================================
-const BASE_VERSION = '20261123-v6.0.1';
+const BASE_VERSION = '20261125-v6.0.3';
 let cachedBundleSig = '';
 let cachedInjectScript = '';
 let cachedIframeInjectScript = '';
@@ -768,6 +768,14 @@ function rebuildBundleIfNeeded(opts = {}) {
   ) {
     normalizedSelectors.excludeI18n +=
       ', [data-testid="conversation-row-history"] a[href^="/c/"], [data-testid="conversation-row-history"] span.truncate';
+  }
+  if (
+    typeof normalizedSelectors.excludeI18n === 'string' &&
+    normalizedSelectors.excludeI18n.trim() &&
+    !normalizedSelectors.excludeI18n.includes('sidebar-agent-row-')
+  ) {
+    normalizedSelectors.excludeI18n +=
+      ', [data-testid^="sidebar-agent-row-"] span.truncate, [data-testid="sidebar-agent-hover-card-title"], [data-testid="coordinator-hover-card-title"], [data-testid="doc-row-title"], [data-ag-sys-follow-row="1"]';
   }
   if (
     typeof normalizedSelectors.excludeI18n === 'string' &&
@@ -1845,6 +1853,7 @@ function parseGenMetadataRow(r) {
   const chatStart = chatStartRaw instanceof Uint8Array ? parseProto(chatStartRaw) : new Map();
   const ctxWinRaw = chatStart.get(10);
   const ctxWin = ctxWinRaw instanceof Uint8Array ? parseProto(ctxWinRaw) : new Map();
+  const estCtx = ctxWin.get(1) || 0;
   const maxCtx = ctxWin.get(4) || 0;
   const ttftRaw = chat.get(11);
   const ttftMap = ttftRaw instanceof Uint8Array ? parseProto(ttftRaw) : new Map();
@@ -1854,8 +1863,13 @@ function parseGenMetadataRow(r) {
   const inTok = usage.get(2) || 0;
   const outTok = usage.get(3) || 0;
   const cacheRead = usage.get(5) || 0;
+  const apiProvider = usage.get(6) || 0;
   const thinkTok = usage.get(9) || 0;
   const respTok = usage.get(10) || 0;
+  const slugRaw = chat.get(19);
+  const slug = slugRaw instanceof Uint8Array ? textDecoder.decode(slugRaw) : '';
+  const thinkUnreported =
+    !usage.has(9) && thinkTok === 0 && (apiProvider === 26 || /^claude-/i.test(slug));
   const ttft = (ttftMap.get(1) || 0) + (ttftMap.get(2) || 0) / 1e9;
   const stream = (streamMap.get(1) || 0) + (streamMap.get(2) || 0) / 1e9;
 
@@ -1865,9 +1879,11 @@ function parseGenMetadataRow(r) {
     outTok,
     cacheRead,
     ctx: inTok + cacheRead,
+    estCtx,
     maxCtx,
     thinkTok,
     respTok,
+    thinkUnreported,
     ttft,
     stream,
     totDur: ttft + stream
@@ -1885,7 +1901,7 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
   if (!DatabaseSync) return null;
   if (!cascadeId || !UUID_RE.test(cascadeId)) return null;
   const state = precomputedState || getDbState(cascadeId, endpointOrDir);
-  if (!state || !state.dbPath || !state.sig) return { cascadeId, hasData: false };
+  if (!state || !state.dbPath || !state.sig) return { cascadeId, hasData: false, dbFound: false };
   const { dbPath, sig } = state;
   const conversationsDir = path.dirname(dbPath);
   const childSnap =
@@ -1912,11 +1928,37 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
       const userStat = db
         .prepare('SELECT COUNT(*) AS cnt, COALESCE(MAX(idx), -1) AS lastIdx FROM steps WHERE step_type = 14')
         .get();
-      const lastUserStepIdx = userStat?.lastIdx ?? -1;
-      const userStepsCount = userStat?.cnt ?? 0;
+      const rawUserLastIdx = userStat?.lastIdx ?? -1;
+      const rawUserStepsCount = userStat?.cnt ?? 0;
+      let lastTurnStepIdx = rawUserLastIdx;
+      let effectiveTurnsCount = rawUserStepsCount;
+      let isSubagentWakeTurns = false;
+      if (rawUserStepsCount === 0) {
+        // 子 Agent 与 Swarm Worker 会话不含 step_type=14，改按外部消息唤醒边界切分轮次（合并连发 [Message] 并排除自身后台 /task- 与系统广播）
+        isSubagentWakeTurns = true;
+        const wakeStat = db
+          .prepare(
+            `SELECT COUNT(*) AS cnt, COALESCE(MAX(s.idx), -1) AS lastIdx
+             FROM steps s
+             WHERE s.step_type = 101
+               AND instr(substr(s.step_payload, 1, 1024), CAST('[Message]' AS BLOB)) > 0
+               AND instr(substr(s.step_payload, 1, 1024), CAST('/task-' AS BLOB)) = 0
+               AND instr(substr(s.step_payload, 1, 1024), CAST('sender=system' AS BLOB)) = 0
+               AND NOT EXISTS (
+                 SELECT 1 FROM steps p
+                 WHERE p.idx = s.idx - 1
+                   AND p.step_type = 101
+                   AND instr(substr(p.step_payload, 1, 1024), CAST('[Message]' AS BLOB)) > 0
+               )`
+          )
+          .get();
+        const wakeCnt = wakeStat?.cnt ?? 0;
+        lastTurnStepIdx = wakeStat?.lastIdx ?? -1;
+        effectiveTurnsCount = wakeCnt > 0 ? wakeCnt : 1;
+      }
       const turnStat = db
         .prepare('SELECT COUNT(*) AS cnt FROM steps WHERE step_type = 15 AND idx > ?')
-        .get(lastUserStepIdx);
+        .get(lastTurnStepIdx);
       const rawTurnSteps = turnStat?.cnt ?? 0;
 
       let inc = incrementalMetricsMap.get(dbPath);
@@ -1924,9 +1966,10 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
         inc &&
         (rowCount < inc.rowCount ||
           maxIdx < inc.maxIdx ||
-          userStepsCount < inc.userStepsCount ||
-          lastUserStepIdx < inc.lastUserStepIdx ||
-          (lastUserStepIdx !== inc.lastUserStepIdx && userStepsCount <= inc.userStepsCount))
+          effectiveTurnsCount < inc.userStepsCount ||
+          lastTurnStepIdx < inc.lastUserStepIdx ||
+          isSubagentWakeTurns !== Boolean(inc.isSubagentWakeTurns) ||
+          (lastTurnStepIdx !== inc.lastUserStepIdx && effectiveTurnsCount <= inc.userStepsCount))
       ) {
         inc = null;
       }
@@ -1960,8 +2003,9 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
           }
           inc.rowCount = rowCount;
           inc.maxIdx = maxIdx;
-          inc.userStepsCount = userStepsCount;
-          inc.lastUserStepIdx = lastUserStepIdx;
+          inc.userStepsCount = effectiveTurnsCount;
+          inc.lastUserStepIdx = lastTurnStepIdx;
+          inc.isSubagentWakeTurns = isSubagentWakeTurns;
         } else {
           inc = null;
         }
@@ -1991,8 +2035,9 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
         inc = {
           rowCount: rows.length,
           maxIdx: rows.length > 0 ? rows[rows.length - 1].idx : -1,
-          userStepsCount,
-          lastUserStepIdx,
+          userStepsCount: effectiveTurnsCount,
+          lastUserStepIdx: lastTurnStepIdx,
+          isSubagentWakeTurns,
           items,
           validItems,
           totalIn,
@@ -2003,7 +2048,7 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
         };
       }
 
-      return { empty: false, inc, userStepsCount, rawTurnSteps };
+      return { empty: false, inc, userStepsCount: effectiveTurnsCount, isSubagentWakeTurns, rawTurnSteps };
     });
 
     if (parentDbRes.empty) {
@@ -2011,6 +2056,7 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
       const emptyPayload = {
         cascadeId,
         hasData: false,
+        dbFound: true,
         sig: compositeSig,
         isDraining: Boolean(childSnap?.isDraining),
         partialStale: false
@@ -2021,7 +2067,7 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
       return emptyPayload;
     }
 
-    const { inc, userStepsCount, rawTurnSteps } = parentDbRes;
+    const { inc, userStepsCount, isSubagentWakeTurns, rawTurnSteps } = parentDbRes;
     setIncrementalMetrics(dbPath, inc);
 
     const { validItems: valid, totalIn, totalCache, totalOut, totalThink, totalResp } = inc;
@@ -2029,6 +2075,7 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
       const emptyPayload = {
         cascadeId,
         hasData: false,
+        dbFound: true,
         sig: compositeSig,
         isDraining: Boolean(childSnap?.isDraining),
         partialStale: false
@@ -2102,12 +2149,25 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
     let turnThink = 0;
     let turnResp = 0;
     let turnDur = 0;
+    let turnAllThinkUnreported = turnSlice.length > 0;
     for (let i = 0; i < turnSlice.length; i++) {
       turnIn += turnSlice[i].inTok;
       turnOut += turnSlice[i].outTok;
       turnThink += turnSlice[i].thinkTok;
       turnResp += turnSlice[i].respTok;
       turnDur += turnSlice[i].totDur;
+      if (!turnSlice[i].thinkUnreported || turnSlice[i].thinkTok > 0) {
+        turnAllThinkUnreported = false;
+      }
+    }
+    let sessionAllThinkUnreported = totalThink === 0 && valid.length > 0;
+    if (sessionAllThinkUnreported) {
+      for (let i = 0; i < valid.length; i++) {
+        if (!valid[i].thinkUnreported) {
+          sessionAllThinkUnreported = false;
+          break;
+        }
+      }
     }
 
     const last = valid[valid.length - 1];
@@ -2128,6 +2188,7 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
       rawStreamTps <= 600 &&
       (streamRatio >= 0.15 || (last.stream >= 2.0 && rawStreamTps <= 250));
     const displayTps = useStream ? rawStreamTps : e2eTps;
+    // 统一以真实计费上下文 last.ctx 计算胶囊水位与压缩预警（实证 61 次压缩前夕 last.ctx 落在 92%~100%），消除双数不一致
     const ctxPct = Math.round((last.ctx / contextLimitTokens) * 100);
     const ctxClass = ctxPct >= 90 ? 'ag-ctx-crit' : ctxPct >= 75 ? 'ag-ctx-warn' : 'ag-ctx-ok';
     const lastCacheRate = last.ctx > 0 ? ((last.cacheRead / last.ctx) * 100).toFixed(1) : '0.0';
@@ -2136,6 +2197,8 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
 
     const subSyncing = isDraining || partialStale;
     const isFullMetrics = activeConfig.metricsMode === 'full';
+    const turnsUnitEn = isSubagentWakeTurns ? (userStepsCount === 1 ? 'wake' : 'wakes') : (userStepsCount === 1 ? 'turn' : 'turns');
+    const turnsUnitZh = isSubagentWakeTurns ? '次唤醒' : '轮提问';
     let inlineHtml = '';
     let tooltipHtml = '';
 
@@ -2153,11 +2216,17 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
         subInlineHtml
       ].join('');
 
+      const turnOutDetailEn = turnAllThinkUnreported
+        ? `Out ${fmtNum(turnOut)} (Think+Resp merged)`
+        : `Out ${fmtNum(turnOut)} (Think ${fmtNum(turnThink)} + Resp ${fmtNum(turnResp)})`;
+      const turnOutDetailZh = turnAllThinkUnreported
+        ? `输出 ${fmtNum(turnOut)} (含思考链)`
+        : `输出 ${fmtNum(turnOut)} (思考 ${fmtNum(turnThink)} + 响应 ${fmtNum(turnResp)})`;
       const turnRowHtml =
         turnSteps > 1
           ? isEnMetrics
-            ? `<div class="ag-tt-row"><span class="ag-tt-lbl">Turn Total (${turnSteps} steps)</span><span class="ag-tt-val">Out ${fmtNum(turnOut)} (Think ${fmtNum(turnThink)} + Resp ${fmtNum(turnResp)}) | ${turnDur.toFixed(1)}s</span></div>`
-            : `<div class="ag-tt-row"><span class="ag-tt-lbl">本轮合计 (${turnSteps}步)</span><span class="ag-tt-val">输出 ${fmtNum(turnOut)} (思考 ${fmtNum(turnThink)} + 响应 ${fmtNum(turnResp)}) | 耗时 ${turnDur.toFixed(1)}s</span></div>`
+            ? `<div class="ag-tt-row"><span class="ag-tt-lbl">Turn Total (${turnSteps} steps)</span><span class="ag-tt-val">${turnOutDetailEn} | ${turnDur.toFixed(1)}s</span></div>`
+            : `<div class="ag-tt-row"><span class="ag-tt-lbl">本轮合计 (${turnSteps}步)</span><span class="ag-tt-val">${turnOutDetailZh} | 耗时 ${turnDur.toFixed(1)}s</span></div>`
           : '';
       const combinedOut = totalOut + childOut;
       const subRowHtml =
@@ -2175,9 +2244,19 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
           ? isEnMetrics
             ? `<div class="ag-tt-row"><span class="ag-tt-lbl">Total Output</span><span class="ag-tt-val">Total ${fmtTok(combinedOut)} (Main ${fmtTok(totalOut)} + Sub ${fmtTok(childOut)})</span></div>`
             : `<div class="ag-tt-row"><span class="ag-tt-lbl">累计输出量</span><span class="ag-tt-val">总计 ${fmtTok(combinedOut)} (主 ${fmtTok(totalOut)} + 子 ${fmtTok(childOut)})</span></div>`
-          : isEnMetrics
-            ? `<div class="ag-tt-row"><span class="ag-tt-lbl">Total Output</span><span class="ag-tt-val">Total ${fmtTok(totalOut)} (Think ${fmtTok(totalThink)} + Resp ${fmtTok(totalResp)})</span></div>`
-            : `<div class="ag-tt-row"><span class="ag-tt-lbl">累计输出量</span><span class="ag-tt-val">总计 ${fmtTok(totalOut)} (思考链 ${fmtTok(totalThink)} + 正文/工具 ${fmtTok(totalResp)})</span></div>`;
+          : sessionAllThinkUnreported
+            ? isEnMetrics
+              ? `<div class="ag-tt-row"><span class="ag-tt-lbl">Total Output</span><span class="ag-tt-val">Total ${fmtTok(totalOut)} (Think+Resp merged)</span></div>`
+              : `<div class="ag-tt-row"><span class="ag-tt-lbl">累计输出量</span><span class="ag-tt-val">总计 ${fmtTok(totalOut)} (接口合并计入思考链)</span></div>`
+            : isEnMetrics
+              ? `<div class="ag-tt-row"><span class="ag-tt-lbl">Total Output</span><span class="ag-tt-val">Total ${fmtTok(totalOut)} (Think ${fmtTok(totalThink)} + Resp ${fmtTok(totalResp)})</span></div>`
+              : `<div class="ag-tt-row"><span class="ag-tt-lbl">累计输出量</span><span class="ag-tt-val">总计 ${fmtTok(totalOut)} (思考链 ${fmtTok(totalThink)} + 正文/工具 ${fmtTok(totalResp)})</span></div>`;
+      const stepOutValEn = last.thinkUnreported
+        ? `${fmtNum(last.outTok)} (Think+Resp merged)`
+        : `${fmtNum(last.outTok)} (Think ${fmtNum(last.thinkTok)} + Resp ${fmtNum(last.respTok)})`;
+      const stepOutValZh = last.thinkUnreported
+        ? `${fmtNum(last.outTok)} (接口合并计入思考链)`
+        : `${fmtNum(last.outTok)} (思考链 ${fmtNum(last.thinkTok)} + 正文/工具 ${fmtNum(last.respTok)})`;
 
       tooltipHtml = isEnMetrics
         ? [
@@ -2185,9 +2264,9 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
             `<div class="ag-tt-row"><span class="ag-tt-lbl">Throughput</span><span class="ag-tt-val">${useStream ? `Stream ${rawStreamTps.toFixed(1)} tok/s | ` : ''}E2E ${e2eTps.toFixed(1)} tok/s</span></div>`,
             `<div class="ag-tt-row"><span class="ag-tt-lbl">Latency</span><span class="ag-tt-val">${useStream ? `TTFT ${last.ttft.toFixed(2)}s | Stream ${last.stream.toFixed(2)}s | Total ${last.totDur.toFixed(2)}s` : `Wait ${last.ttft.toFixed(2)}s | Flush ${last.stream.toFixed(2)}s | Total ${last.totDur.toFixed(2)}s`}</span></div>`,
             `<div class="ag-tt-row"><span class="ag-tt-lbl">Context</span><span class="ag-tt-val">${fmtNum(last.ctx)} (New ${fmtNum(last.inTok)} + Cache ${fmtNum(last.cacheRead)}, ${lastCacheRate}%)</span></div>`,
-            `<div class="ag-tt-row"><span class="ag-tt-lbl">Step Output</span><span class="ag-tt-val">${fmtNum(last.outTok)} (Think ${fmtNum(last.thinkTok)} + Resp ${fmtNum(last.respTok)})</span></div>`,
+            `<div class="ag-tt-row"><span class="ag-tt-lbl">Step Output</span><span class="ag-tt-val">${stepOutValEn}</span></div>`,
             turnRowHtml,
-            `<div class="ag-tt-hdr ag-tt-sec">Session Total (${userStepsCount} turns / ${valid.length} calls)</div>`,
+            `<div class="ag-tt-hdr ag-tt-sec">Session Total (${userStepsCount} ${turnsUnitEn} / ${valid.length} calls)</div>`,
             `<div class="ag-tt-row"><span class="ag-tt-lbl">Compaction</span><span class="ag-tt-val">${fmtTok(last.ctx)} / ${limitStr} (${ctxPct}%) · ${fmtTok(remainCtx)} left</span></div>`,
             `<div class="ag-tt-row"><span class="ag-tt-lbl">Total Input</span><span class="ag-tt-val">New ${fmtTok(totalIn)} + Cache ${fmtTok(totalCache)} (${sessionCacheRate}% hit)</span></div>`,
             subRowHtml,
@@ -2198,9 +2277,9 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
             `<div class="ag-tt-row"><span class="ag-tt-lbl">生成速度</span><span class="ag-tt-val">${useStream ? `流式 ${rawStreamTps.toFixed(1)} tok/s | ` : ''}端到端（含等待） ${e2eTps.toFixed(1)} tok/s</span></div>`,
             `<div class="ag-tt-row"><span class="ag-tt-lbl">响应耗时</span><span class="ag-tt-val">${useStream ? `TTFT ${last.ttft.toFixed(2)}s | 流式 ${last.stream.toFixed(2)}s | 总计 ${last.totDur.toFixed(2)}s` : `等待 ${last.ttft.toFixed(2)}s | 刷出 ${last.stream.toFixed(2)}s | 总计 ${last.totDur.toFixed(2)}s`}</span></div>`,
             `<div class="ag-tt-row"><span class="ag-tt-lbl">当前上下文</span><span class="ag-tt-val">${fmtNum(last.ctx)} (新增 ${fmtNum(last.inTok)} + 缓存 ${fmtNum(last.cacheRead)}, ${lastCacheRate}%)</span></div>`,
-            `<div class="ag-tt-row"><span class="ag-tt-lbl">本步输出量</span><span class="ag-tt-val">${fmtNum(last.outTok)} (思考链 ${fmtNum(last.thinkTok)} + 正文/工具 ${fmtNum(last.respTok)})</span></div>`,
+            `<div class="ag-tt-row"><span class="ag-tt-lbl">本步输出量</span><span class="ag-tt-val">${stepOutValZh}</span></div>`,
             turnRowHtml,
-            `<div class="ag-tt-hdr ag-tt-sec">当前会话累计 (${userStepsCount} 轮提问 / ${valid.length} 次有效调用)</div>`,
+            `<div class="ag-tt-hdr ag-tt-sec">当前会话累计 (${userStepsCount} ${turnsUnitZh} / ${valid.length} 次有效调用)</div>`,
             `<div class="ag-tt-row"><span class="ag-tt-lbl">压缩水位线</span><span class="ag-tt-val">${fmtTok(last.ctx)} / ${limitStr} (${ctxPct}%) · 距压缩余 ${fmtTok(remainCtx)}</span></div>`,
             `<div class="ag-tt-row"><span class="ag-tt-lbl">累计输入量</span><span class="ag-tt-val">新增 ${fmtTok(totalIn)} + 缓存读取 ${fmtTok(totalCache)} (命中率 ${sessionCacheRate}%)</span></div>`,
             subRowHtml,
@@ -2226,8 +2305,10 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
       const turnDurStr = effectiveTurnDur >= 10 ? `${Math.round(effectiveTurnDur)}s` : `${effectiveTurnDur.toFixed(1)}s`;
 
       const effectiveTurnIn = turnSteps > 0 ? turnIn : last.inTok;
+      const effectiveTurnOut = turnSteps > 0 ? turnOut : last.outTok;
       const effectiveTurnThink = turnSteps > 0 ? turnThink : last.thinkTok;
       const effectiveTurnResp = turnSteps > 0 ? turnResp : last.respTok;
+      const effectiveThinkUnreported = turnSteps > 0 ? turnAllThinkUnreported : Boolean(last.thinkUnreported);
       const splitSum = (effectiveTurnThink || 0) + (effectiveTurnResp || 0);
       const thinkRatioPct = splitSum > 0 ? Math.round(((effectiveTurnThink || 0) / splitSum) * 100) : 0;
       const respRatioPct = 100 - thinkRatioPct;
@@ -2238,23 +2319,32 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
       const sessionCacheTier = resolveCacheTier(Number(sessionCacheRate) || 0);
       const ctxVolTier = last.ctx > 400000 ? 'bad' : last.ctx >= 200000 ? 'fair' : 'good';
 
+      const compactSplitRowEn = effectiveThinkUnreported
+        ? `<div class="ag-tt-row ag-tt-row-merged"><span class="ag-tt-lbl">Output</span><span class="ag-tt-val">${fmtTok(effectiveTurnOut)} <span class="ag-tt-lbl">(Think+Resp merged)</span></span></div>`
+        : `<div class="ag-tt-row ag-tt-row-merged"><span class="ag-tt-lbl">Output Split</span><span class="ag-tt-split-group"><span class="ag-tt-split-ratio ag-tt-think-lbl">Think ${thinkRatioPct}%</span><span class="ag-tt-split-track"><span class="ag-tt-split-think" style="width:${thinkRatioPct}%"></span><span class="ag-tt-split-resp" style="width:${respRatioPct}%"></span></span><span class="ag-tt-split-ratio ag-tt-resp-lbl">Resp ${respRatioPct}%</span></span></div>`;
+      const compactSplitRowZh = effectiveThinkUnreported
+        ? `<div class="ag-tt-row ag-tt-row-merged"><span class="ag-tt-lbl">本轮输出</span><span class="ag-tt-val">${fmtTok(effectiveTurnOut)} <span class="ag-tt-lbl">(接口合并计入思考链)</span></span></div>`
+        : `<div class="ag-tt-row ag-tt-row-merged"><span class="ag-tt-lbl">输出比例</span><span class="ag-tt-split-group"><span class="ag-tt-split-ratio ag-tt-think-lbl">思考链 ${thinkRatioPct}%</span><span class="ag-tt-split-track"><span class="ag-tt-split-think" style="width:${thinkRatioPct}%"></span><span class="ag-tt-split-resp" style="width:${respRatioPct}%"></span></span><span class="ag-tt-split-ratio ag-tt-resp-lbl">正文/工具 ${respRatioPct}%</span></span></div>`;
+      const turnHdrLabelEn = isSubagentWakeTurns ? `Wake #${turnDisplayNum}` : `Turn #${turnDisplayNum}`;
+      const turnHdrLabelZh = isSubagentWakeTurns ? `第${turnDisplayNum}次唤醒` : `第${turnDisplayNum}轮`;
+
       tooltipHtml = isEnMetrics
         ? [
-            `<div class="ag-tt-hdr"><span>Current Turn</span><span class="ag-tt-hdr-meta">Turn #${turnDisplayNum} · ${effectiveTurnSteps} ${effectiveTurnSteps === 1 ? 'step' : 'steps'} · ${turnDurStr}</span></div>`,
+            `<div class="ag-tt-hdr"><span>Current Turn</span><span class="ag-tt-hdr-meta">${turnHdrLabelEn} · ${effectiveTurnSteps} ${effectiveTurnSteps === 1 ? 'step' : 'steps'} · ${turnDurStr}</span></div>`,
             `<div class="ag-tt-row"><span class="ag-tt-lbl">Throughput</span><span class="ag-tt-val">${useStream ? `Stream ${rawStreamTps.toFixed(1)} tok/s | ` : ''}E2E ${e2eTps.toFixed(1)} tok/s</span></div>`,
             `<div class="ag-tt-row"><span class="ag-tt-lbl">Latency</span><span class="ag-tt-val">${useStream ? `TTFT ${last.ttft.toFixed(2)}s | Stream ${last.stream.toFixed(2)}s | Total ${last.totDur.toFixed(2)}s` : `Wait ${last.ttft.toFixed(2)}s | Flush ${last.stream.toFixed(2)}s | Total ${last.totDur.toFixed(2)}s`}</span></div>`,
             `<div class="ag-tt-row ag-tt-row-merged"><span class="ag-tt-lbl">Net Input</span><span class="ag-tt-compact-right"><span class="ag-tt-val">+${fmtTok(effectiveTurnIn)}</span><span class="ag-tt-cache-tag ag-cache-${lastCacheTier}">Cache ${lastCacheRate}%</span></span></div>`,
-            `<div class="ag-tt-row ag-tt-row-merged"><span class="ag-tt-lbl">Output Split</span><span class="ag-tt-split-group"><span class="ag-tt-split-ratio ag-tt-think-lbl">Think ${thinkRatioPct}%</span><span class="ag-tt-split-track"><span class="ag-tt-split-think" style="width:${thinkRatioPct}%"></span><span class="ag-tt-split-resp" style="width:${respRatioPct}%"></span></span><span class="ag-tt-split-ratio ag-tt-resp-lbl">Resp ${respRatioPct}%</span></span></div>`,
-            `<div class="ag-tt-hdr ag-tt-sec"><span>Session Total</span><span class="ag-tt-hdr-meta">${userStepsCount} turns / ${valid.length} calls</span></div>`,
+            compactSplitRowEn,
+            `<div class="ag-tt-hdr ag-tt-sec"><span>Session Total</span><span class="ag-tt-hdr-meta">${userStepsCount} ${turnsUnitEn} / ${valid.length} calls</span></div>`,
             `<div class="ag-tt-row ag-tt-row-merged"><span class="ag-tt-bar-group"><span class="ag-tt-ctx-bar"><span class="ag-tt-ctx-fill ${ctxClass}" style="width:${clampedPct}%"></span></span><span class="ag-tt-bar-lbl ag-tt-num-${ctxVolTier}">${fmtTok(last.ctx)}/${limitStr} (${ctxPct}%)</span></span><span class="ag-tt-nowrap"><span class="ag-tt-lbl">Avg Cache </span><span class="ag-tt-val ag-tt-num-${sessionCacheTier}">${sessionCacheRate}%</span></span></div>`
           ].join('')
         : [
-            `<div class="ag-tt-hdr"><span>当前轮次</span><span class="ag-tt-hdr-meta">第${turnDisplayNum}轮 总${effectiveTurnSteps}步 共耗时${turnDurStr}</span></div>`,
+            `<div class="ag-tt-hdr"><span>当前轮次</span><span class="ag-tt-hdr-meta">${turnHdrLabelZh} 总${effectiveTurnSteps}步 共耗时${turnDurStr}</span></div>`,
             `<div class="ag-tt-row"><span class="ag-tt-lbl">生成速度</span><span class="ag-tt-val">${useStream ? `流式 ${rawStreamTps.toFixed(1)} tok/s | ` : ''}端到端 ${e2eTps.toFixed(1)} tok/s</span></div>`,
             `<div class="ag-tt-row"><span class="ag-tt-lbl">响应耗时</span><span class="ag-tt-val">${useStream ? `TTFT ${last.ttft.toFixed(2)}s | 流式 ${last.stream.toFixed(2)}s | 总计 ${last.totDur.toFixed(2)}s` : `等待 ${last.ttft.toFixed(2)}s | 刷出 ${last.stream.toFixed(2)}s | 总计 ${last.totDur.toFixed(2)}s`}</span></div>`,
             `<div class="ag-tt-row ag-tt-row-merged"><span class="ag-tt-lbl">本轮净增</span><span class="ag-tt-compact-right"><span class="ag-tt-val">+${fmtTok(effectiveTurnIn)}</span><span class="ag-tt-cache-tag ag-cache-${lastCacheTier}">缓存率 ${lastCacheRate}%</span></span></div>`,
-            `<div class="ag-tt-row ag-tt-row-merged"><span class="ag-tt-lbl">输出比例</span><span class="ag-tt-split-group"><span class="ag-tt-split-ratio ag-tt-think-lbl">思维链 ${thinkRatioPct}%</span><span class="ag-tt-split-track"><span class="ag-tt-split-think" style="width:${thinkRatioPct}%"></span><span class="ag-tt-split-resp" style="width:${respRatioPct}%"></span></span><span class="ag-tt-split-ratio ag-tt-resp-lbl">正文/工具 ${respRatioPct}%</span></span></div>`,
-            `<div class="ag-tt-hdr ag-tt-sec"><span>会话总计</span><span class="ag-tt-hdr-meta">${userStepsCount} 轮提问 / ${valid.length} 次调用</span></div>`,
+            compactSplitRowZh,
+            `<div class="ag-tt-hdr ag-tt-sec"><span>会话总计</span><span class="ag-tt-hdr-meta">${userStepsCount} ${turnsUnitZh} / ${valid.length} 次调用</span></div>`,
             `<div class="ag-tt-row ag-tt-row-merged"><span class="ag-tt-bar-group"><span class="ag-tt-ctx-bar"><span class="ag-tt-ctx-fill ${ctxClass}" style="width:${clampedPct}%"></span></span><span class="ag-tt-bar-lbl ag-tt-num-${ctxVolTier}">${fmtTok(last.ctx)}/${limitStr} (${ctxPct}%)</span></span><span class="ag-tt-nowrap"><span class="ag-tt-lbl">全轮次平均缓存 </span><span class="ag-tt-val ag-tt-num-${sessionCacheTier}">${sessionCacheRate}%</span></span></div>`
           ].join('');
     }
@@ -2262,6 +2352,7 @@ function parseConversationMetrics(cascadeId, endpointOrDir, precomputedState = n
     const payload = {
       cascadeId,
       hasData: true,
+      dbFound: true,
       sig: compositeSig,
       isDraining,
       partialStale,
@@ -2295,23 +2386,57 @@ const TA_SLUG_LABELS = {
   'gemini-pro-orchestrator-carbon': 'Orchestrator (Carbon)',
   'gemini-flash-worker-agy': 'Gemini 4 Hydrogen (Orchestrator)',
   'gemini-4-hydrogen': 'Gemini 4 Hydrogen',
+  'gemini-4-hydrogen-low': 'Gemini 4 Hydrogen (Low)',
+  'gemini-4-hydrogen-medium': 'Gemini 4 Hydrogen (Medium)',
+  'gemini-4-hydrogen-high': 'Gemini 4 Hydrogen (High)',
+  'gemini-4-hydrogen-xhigh': 'Gemini 4 Hydrogen (Extra High)',
+  'gemini-4-hydrogen-sonar': 'Gemini 4 Hydrogen (Sonar)',
   'gemini-4-hydrogen-tiered-high': 'Gemini 4 Hydrogen (High)',
+  'gemini-4-hydrogen-tiered-xhigh': 'Gemini 4 Hydrogen (Extra High)',
   'gemini-4-argon': 'Gemini 4 Argon',
+  'gemini-4-argon-b': 'Gemini 4 Argon (High)',
+  'gemini-4-argon-low': 'Gemini 4 Argon (Low)',
+  'gemini-4-argon-medium': 'Gemini 4 Argon (Medium)',
+  'gemini-4-argon-high': 'Gemini 4 Argon (High)',
   'gemini-4-argon-trial': 'Gemini 4 Argon',
   'gemini-4-carbon': 'Gemini 4 Carbon',
+  'gemini-4-carbon-low': 'Gemini 4 Carbon (Low)',
+  'gemini-4-carbon-medium': 'Gemini 4 Carbon (Medium)',
+  'gemini-4-carbon-high': 'Gemini 4 Carbon (High)',
   'gemini-4-neon': 'Gemini 4 Neon',
+  'gemini-4-neon-low': 'Gemini 4 Neon (Low)',
+  'gemini-4-neon-medium': 'Gemini 4 Neon (Medium)',
+  'gemini-4-neon-high': 'Gemini 4 Neon (High)',
+  'gemini-4-neon-xhigh': 'Gemini 4 Neon (XHigh)',
+  'gemini-3.8-flash': 'Gemini 3.8 Flash',
   'gemini-3.8-flash-n': 'Gemini 3.8 Flash',
+  'gemini-3.8-flash-low': 'Gemini 3.8 Flash (Low)',
+  'gemini-3.8-flash-medium': 'Gemini 3.8 Flash (Medium)',
+  'gemini-3.8-flash-high': 'Gemini 3.8 Flash (High)',
   'gemini-3.8-flash-tiered': 'Gemini 3.8 Flash',
+  'gemini-3.7-flash': 'Gemini 3.7 Flash',
+  'gemini-3.5-flash': 'Gemini 3.5 Flash',
+  'gemini-3.5-flash-lite': 'Gemini 3.5 Flash Lite',
+  'gemini-3-pro': 'Gemini 3 Pro',
+  'gemini-2.5-pro': 'Gemini 2.5 Pro',
+  'claude-sonnet-4-6': 'Claude Sonnet 4.6',
   'claude-sonnet-5-5': 'Claude Sonnet 5.5',
+  'claude-sonnet-5-5-low': 'Claude Sonnet 5.5 (Low)',
   'claude-sonnet-5-5-medium': 'Claude Sonnet 5.5 (Medium)',
   'claude-sonnet-5-5-high': 'Claude Sonnet 5.5 (High)',
+  'claude-opus-4-6': 'Claude Opus 4.6',
   'claude-opus-4-6-thinking': 'Claude Opus 4.6 (Thinking)',
+  'claude-opus-5-5': 'Claude Opus 5.5',
+  'claude-opus-5-5-low': 'Claude Opus 5.5 (Low)',
   'claude-opus-5-5-medium': 'Claude Opus 5.5 (Medium)',
   'claude-opus-5-5-high': 'Claude Opus 5.5 (High)',
-  'gpt-oss-120b-medium': 'GPT-OSS 120B (Medium)'
+  'claude-opus-5-5-max': 'Claude Opus 5.5 (Max)',
+  'gpt-oss-120b-medium': 'GPT-OSS 120B (Medium)',
+  'gpt-oss-120b-maas': 'GPT-OSS 120B',
+  'gpt-oss-20b-maas': 'GPT-OSS 20B'
 };
 
-const TA_CACHE_SCHEMA_REV = 3;
+const TA_CACHE_SCHEMA_REV = 5;
 const TA_CACHE_FILE = path.join(CACHE_DIR, 'token-analytics-index.json');
 const TA_CACHE_SALT = crypto
   .createHash('sha1')
@@ -2568,12 +2693,13 @@ function taNormalizeProjectInfo(workspaceUris, projectId = '') {
   };
 }
 
-function taClassifyModelPool({ label = '', slug = '', modelEnum = '', usedClaude = '' } = {}) {
+function taClassifyModelPool({ label = '', slug = '', modelEnum = '', usedClaude = '', apiProvider = 0 } = {}) {
   const combined = `${label} ${slug} ${modelEnum}`.toLowerCase();
   if (combined.includes('argon')) return 'Argon';
-  if (combined.includes('claude') || combined.includes('gpt')) return 'Claude & GPT';
+  if (combined.includes('claude') || combined.includes('gpt')) return 'Claude';
   if (combined.includes('gemini') || combined.includes('orchestrator')) return 'Gemini';
-  if (String(usedClaude).toLowerCase() === 'true') return 'Claude & GPT';
+  if (apiProvider === 26 || apiProvider === 31 || apiProvider === 32) return 'Claude';
+  if (String(usedClaude).toLowerCase() === 'true') return 'Claude';
   return 'Gemini';
 }
 
@@ -2728,10 +2854,11 @@ function taParseGenMetadataRowToCall(row, { lookupTs, lookupPlanState, stepByIdx
   const slug = taFieldToStr(taGetField(chat, 19));
   const rawLabel = taFieldToStr(taGetField(chat, 21));
   const enumId = taGetField(usage, 1)?.v || taGetField(chat, 3)?.v || 0;
+  const apiProvider = taGetField(usage, 6)?.v || 0;
   const modelEnum = kv.model_enum || '';
   const usedClaude = kv.used_claude || '';
   const baseLabel = taNormalizeModelLabel({ label: rawLabel, slug, modelEnum, enumId });
-  const pool = taClassifyModelPool({ label: baseLabel, slug, modelEnum, usedClaude });
+  const pool = taClassifyModelPool({ label: baseLabel, slug, modelEnum, usedClaude, apiProvider });
 
   const slugLower = String(slug || '').toLowerCase();
   const labelTrim = String(baseLabel || '').trim();
@@ -2773,6 +2900,7 @@ function taParseGenMetadataRowToCall(row, { lookupTs, lookupPlanState, stepByIdx
   if (!state.firstParentCascadeId && parentCascadeId) state.firstParentCascadeId = parentCascadeId;
   if (!state.firstRootCascadeId && rootCascadeId) state.firstRootCascadeId = rootCascadeId;
   if (!state.firstSubagentType && subagentType) state.firstSubagentType = subagentType;
+  if (inTok === 0 && cacheRead === 0 && outTok === 0) return null;
 
   const isSubagentCall = Boolean(trajParentId || state.firstParentCascadeId || subagentType);
   const finalModelLabel =
@@ -3437,7 +3565,9 @@ async function queryTokenAnalytics(
       modelSet.add(c.model);
 
       const callIsSubagent = meta.isSubagent || Boolean(c.subagentType);
-      const subagentType = callIsSubagent ? c.subagentType || meta.agentName || 'subagent' : '';
+      const rawSubType =
+        c.subagentType === 'worker' && meta.agentName ? meta.agentName : c.subagentType || meta.agentName;
+      const subagentType = callIsSubagent ? rawSubType || 'subagent' : '';
       const scenario = taResolveCallScenario(c.baseScenario, callIsSubagent, meta.source);
       const date = taToLocalDateString(c.ts || meta.parsed.mtimeSec);
       const fKey = `${date}\x00${meta.id}\x00${c.model}\x00${c.pool}\x00${scenario}\x00${subagentType}`;
@@ -3784,6 +3914,27 @@ function readPortInfo(portFile) {
 
 function readPort(portFile) {
   return readPortInfo(portFile).port;
+}
+
+function redactTargetLabelForLog(raw) {
+  return String(raw || '').replace(/([?&#](?:access_)?token=)[^&#\s)]+/gi, '$1<redacted>');
+}
+
+let lastIframeInjectLogAt = 0;
+let lastIframeInjectLogVer = '';
+let suppressedIframeInjectCount = 0;
+
+function shouldLogIframeTargetLifecycle(patchVer) {
+  const now = Date.now();
+  if (patchVer !== lastIframeInjectLogVer || now - lastIframeInjectLogAt >= 600000) {
+    const extra = suppressedIframeInjectCount > 0 ? ` (+${suppressedIframeInjectCount} routine iframe mounts)` : '';
+    lastIframeInjectLogVer = patchVer;
+    lastIframeInjectLogAt = now;
+    suppressedIframeInjectCount = 0;
+    return { log: true, suffix: extra };
+  }
+  suppressedIframeInjectCount += 1;
+  return { log: false, suffix: '' };
 }
 
 function isExternalNonHostBrowserProduct(browserStr, userAgentStr = '') {
@@ -4356,7 +4507,16 @@ function attachTarget(target, endpoint) {
               }
             }
           }
-          console.log(`[Daemon] Injected (${cachedPatchVersion}) into target ${target.id} [${endpoint.channel}]`);
+          if (target.type === 'iframe') {
+            const gate = shouldLogIframeTargetLifecycle(cachedPatchVersion);
+            if (gate.log) {
+              console.log(
+                `[Daemon] Injected (${cachedPatchVersion}) into iframe ${target.id} [${endpoint.channel}]${gate.suffix}`
+              );
+            }
+          } else {
+            console.log(`[Daemon] Injected (${cachedPatchVersion}) into target ${target.id} [${endpoint.channel}]`);
+          }
           return true;
         }
       };
@@ -4456,7 +4616,7 @@ function attachTarget(target, endpoint) {
             continue;
           }
 
-          const renderedSig = `${payload.hasData ? '1' : '0'}\n${payload.inlineHtml || ''}\n${payload.tooltipHtml || ''}`;
+          const renderedSig = `${payload.hasData ? '1' : '0'}:${payload.dbFound ? '1' : '0'}\n${payload.inlineHtml || ''}\n${payload.tooltipHtml || ''}`;
           if (force || renderedSig !== cState.lastRenderedSig) {
             pendingUpdates.push({
               payload,
@@ -4743,7 +4903,18 @@ function attachTarget(target, endpoint) {
         if (entry && entry.ws === ws) {
           entry.hostConfirmed = true;
         }
-        console.log(`[Daemon] Attached target: ${target.id} (${target.title || 'Untitled'}) [${endpoint.channel}]`);
+        if (target.type === 'iframe') {
+          const gate = shouldLogIframeTargetLifecycle(cachedPatchVersion);
+          if (gate.log) {
+            console.log(
+              `[Daemon] Attached iframe: ${target.id} (${redactTargetLabelForLog(target.title || target.url || 'iframe')}) [${endpoint.channel}]${gate.suffix}`
+            );
+          }
+        } else {
+          console.log(
+            `[Daemon] Attached target: ${target.id} (${redactTargetLabelForLog(target.title || 'Untitled')}) [${endpoint.channel}]`
+          );
+        }
         if (!pageEnabled) {
           pageEnabled = true;
           await send('Page.enable');
@@ -5273,7 +5444,9 @@ function probeRunningHostProcesses(channelMode = 'auto', endpoints = [], reachab
     const etimeRaw = m[2];
     const cmd = m[3];
     if (!pid || NON_HOST_CMD_RE.test(cmd) || /Helper(?:\s|\.|\/)/i.test(cmd)) continue;
-    const appMatch = cmd.match(/^(\S.*?\/Antigravity(?:\s-\sInsiders)?\.app)\/Contents\/MacOS\/(Antigravity(?:\s-\sInsiders)?)(?:\s|$)/);
+    const appMatch = cmd.match(
+      /^(\/[^\r\n]*?\/Antigravity(?:\s-\sInsiders)?\.app)\/Contents\/MacOS\/(Antigravity(?:\s-\sInsiders)?)(?:\s|$)/
+    );
     if (!appMatch) continue;
     const appPath = appMatch[1];
     const binName = appMatch[2];
@@ -5284,6 +5457,7 @@ function probeRunningHostProcesses(channelMode = 'auto', endpoints = [], reachab
       channel: ch,
       elapsedSec: parsePosixEtimeSeconds(etimeRaw),
       appPath,
+      exePath: path.join(appPath, 'Contents', 'MacOS', binName),
       cmd,
       hasCdpFlag: /--remote-debugging-port(?:=|\s|$)/.test(cmd),
       hasUpdatedFlag: /--updated(?:\s|$)/.test(cmd)
@@ -5312,6 +5486,325 @@ function hasActiveConversationWalWrite(endpoint, windowSec = 15, minWalMtimeMs =
     }
   } catch {}
   return false;
+}
+
+function tokenizeRelaunchCmdLine(cmdLine) {
+  const src = String(cmdLine || '');
+  const tokens = [];
+  // macOS ps -axo command= 输出无外层 shell 引号，禁用单引号配对以免路径中的撇号（如 John's Repo）吞没后续参数
+  let cur = '';
+  let inDoubleQuote = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inDoubleQuote) {
+      if (ch === '\\' && i + 1 < src.length && src[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else if (ch === '"') {
+        inDoubleQuote = false;
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inDoubleQuote = true;
+    } else if (/\s/.test(ch)) {
+      if (cur.length > 0) {
+        tokens.push(cur);
+        cur = '';
+      }
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.length > 0) tokens.push(cur);
+  return tokens;
+}
+
+function stripLeadingExecutableFromCmdLine(cmdLine, exePath = '') {
+  const src = String(cmdLine || '').trimStart();
+  if (!src) return '';
+  const exe = String(exePath || '').trim();
+  if (exe) {
+    const quotedExe = `"${exe}"`;
+    if (src.startsWith(quotedExe)) {
+      const rest = src.slice(quotedExe.length);
+      if (!rest || /^\s/.test(rest)) return rest.trimStart();
+    }
+    if (src.startsWith(exe)) {
+      const rest = src.slice(exe.length);
+      if (!rest || /^\s/.test(rest)) return rest.trimStart();
+    }
+  }
+  const macAppMatch = src.match(
+    /^(?:"[^"]+"|\/[^\r\n]*?\/Antigravity(?:\s-\sInsiders)?\.app\/Contents\/MacOS\/Antigravity(?:\s-\sInsiders)?)(?=\s|$)/
+  );
+  if (macAppMatch) return src.slice(macAppMatch[0].length).trimStart();
+  if (src.startsWith('"')) {
+    const endQuote = src.indexOf('"', 1);
+    if (endQuote > 0) return src.slice(endQuote + 1).trimStart();
+  }
+  const firstWs = src.search(/\s/);
+  return firstWs < 0 ? '' : src.slice(firstWs + 1).trimStart();
+}
+
+function normalizeProxyUrl(address, defaultScheme = 'http') {
+  const raw = String(address || '').trim();
+  if (!raw) return '';
+  // Chromium --proxy-server 允许逗号分隔回退链（如 http://127.0.0.1:7890,direct://），提取首个真实代理节点
+  const firstHop = raw
+    .split(',')
+    .map((s) => s.trim())
+    .find((s) => s && !/^direct:\/\//i.test(s));
+  if (!firstHop) return '';
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(firstHop)) return firstHop;
+  return `${defaultScheme}://${firstHop}`;
+}
+
+function parseProxyServerSpec(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  if (!text.includes('=')) {
+    const url = normalizeProxyUrl(text, 'http');
+    return url ? { httpProxy: url, httpsProxy: url } : null;
+  }
+  const map = Object.create(null);
+  for (const entry of text.split(';')) {
+    const eq = entry.indexOf('=');
+    if (eq <= 0) continue;
+    const scheme = entry.slice(0, eq).trim().toLowerCase();
+    const val = entry.slice(eq + 1).trim();
+    if (scheme && val) map[scheme] = val;
+  }
+  let httpProxy = map.http ? normalizeProxyUrl(map.http, 'http') : '';
+  let httpsProxy = map.https ? normalizeProxyUrl(map.https, 'http') : '';
+  if (map.socks) {
+    // 无版本后缀的 socks= 配置，现代本地代理客户端普遍提供 SOCKS5 混合监听，Go net/http 亦仅支持 socks5://
+    const socks = normalizeProxyUrl(map.socks, 'socks5');
+    if (!httpProxy) httpProxy = socks;
+    if (!httpsProxy) httpsProxy = socks;
+  }
+  if (!httpProxy && httpsProxy) httpProxy = httpsProxy;
+  if (!httpsProxy && httpProxy) httpsProxy = httpProxy;
+  if (!httpProxy && !httpsProxy) {
+    const firstVal = Object.values(map)[0];
+    if (firstVal) {
+      const url = normalizeProxyUrl(firstVal, 'http');
+      httpProxy = url;
+      httpsProxy = url;
+    }
+  }
+  return httpProxy || httpsProxy ? { httpProxy, httpsProxy } : null;
+}
+
+function normalizeBypassTokenForNoProxy(rawEntry) {
+  const trimmed = String(rawEntry || '').trim();
+  if (!trimmed) return '';
+  const low = trimmed.toLowerCase();
+  if (low === '<local>' || low === '<-loopback>') return '';
+  if (low === '[::1]') return '::1';
+  if (trimmed === '*.*.*.*') return '*';
+
+  // 分离非 IPv6 末尾端口（如 192.168.1.*:8080 或 *corp.com:8443）
+  let hostPart = trimmed;
+  let portSuffix = '';
+  const firstColon = trimmed.indexOf(':');
+  const lastColon = trimmed.lastIndexOf(':');
+  if (firstColon > 0 && firstColon === lastColon && /^\d{1,5}$/.test(trimmed.slice(firstColon + 1))) {
+    hostPart = trimmed.slice(0, firstColon);
+    portSuffix = trimmed.slice(firstColon);
+  }
+
+  if (/^\d{1,3}(?:\.(?:\d{1,3}|\*)){1,3}$/.test(hostPart) && hostPart.includes('*')) {
+    const parts = hostPart.split('.');
+    const starIdx = parts.indexOf('*');
+    if (starIdx >= 1 && starIdx <= 3 && parts.slice(starIdx).every((p) => p === '*')) {
+      const nums = parts.slice(0, starIdx).map((n) => Number(n));
+      if (nums.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) {
+        const octets = [...nums, 0, 0, 0].slice(0, 4);
+        // Go httpproxy 对 CIDR 条目不支持附带端口后缀，统一输出标准网段 CIDR
+        return `${octets.join('.')}/${starIdx * 8}`;
+      }
+    }
+    return '';
+  }
+
+  // 将 *corp.com（无前导点号）转换为 Go/Node 支持的子域后缀 .corp.com
+  if (/^\*[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(hostPart)) {
+    return `.${hostPart.slice(1)}${portSuffix}`;
+  }
+
+  return `${hostPart}${portSuffix}`;
+}
+
+function parseBypassListEntries(raw) {
+  const out = [];
+  for (const part of String(raw || '').split(/[;,\s]+/)) {
+    const norm = normalizeBypassTokenForNoProxy(part);
+    if (norm) out.push(norm);
+  }
+  return out;
+}
+
+function mergeNoProxyValue(existingRaw, extraEntries = []) {
+  const LOOPBACK_ENTRIES = ['localhost', '127.0.0.1', '::1'];
+  const merged = [];
+  const seen = new Set();
+  const pushItem = (rawItem) => {
+    const norm = normalizeBypassTokenForNoProxy(rawItem);
+    if (!norm) return;
+    const key = norm.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(norm);
+  };
+  for (const part of String(existingRaw || '').split(/[,;]+/)) {
+    pushItem(part);
+  }
+  for (const extra of extraEntries) {
+    pushItem(extra);
+  }
+  for (const lb of LOOPBACK_ENTRIES) {
+    pushItem(lb);
+  }
+  return merged.join(',');
+}
+
+function extractRelaunchArgsFromCmdLine(cmdLine, meta = {}) {
+  const tokens = Array.isArray(meta?.procArgs)
+    ? meta.procArgs
+    : (() => {
+        const rest = stripLeadingExecutableFromCmdLine(cmdLine, meta?.exePath || '');
+        return rest ? tokenizeRelaunchCmdLine(rest) : [];
+      })();
+  if (tokens.length === 0) return { allArgs: [], preservedProxyArgs: [] };
+
+  const VALUE_FLAGS = new Set(['--proxy-server', '--proxy-bypass-list', '--proxy-pac-url']);
+  const BOOL_FLAGS = new Set(['--no-proxy-server', '--proxy-auto-detect']);
+  const DROP_EXACT_FLAGS = new Set(['--updated', '--remote-debugging-pipe', '--inspect', '--inspect-brk']);
+  const DROP_VALUE_FLAGS = new Set(['--remote-debugging-port', '--type']);
+  const DROP_PREFIXES = ['--squirrel-', '-psn_', '--inspect=', '--inspect-brk='];
+  const allArgs = [];
+  const preservedProxyArgs = [];
+  const seenProxy = new Set();
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (!tok) continue;
+    if (tok.startsWith('-')) {
+      const lowTok = tok.toLowerCase();
+      if (DROP_PREFIXES.some((pfx) => lowTok.startsWith(pfx))) {
+        continue;
+      }
+      const eqIdx = tok.indexOf('=');
+      const flag = (eqIdx >= 0 ? tok.slice(0, eqIdx) : tok).toLowerCase();
+      if (DROP_EXACT_FLAGS.has(flag)) continue;
+      if (DROP_VALUE_FLAGS.has(flag)) {
+        if (eqIdx < 0 && i + 1 < tokens.length && !tokens[i + 1].startsWith('-')) {
+          i++;
+        }
+        continue;
+      }
+      if (BOOL_FLAGS.has(flag)) {
+        if (!seenProxy.has(flag)) {
+          seenProxy.add(flag);
+          preservedProxyArgs.push(flag);
+          allArgs.push(flag);
+        }
+        continue;
+      }
+      if (VALUE_FLAGS.has(flag)) {
+        let val = '';
+        if (eqIdx >= 0) {
+          val = tok.slice(eqIdx + 1).trim();
+        } else if (i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) {
+          val = tokens[++i].trim();
+        }
+        if (val && !seenProxy.has(flag)) {
+          seenProxy.add(flag);
+          const normalized = `${flag}=${val}`;
+          preservedProxyArgs.push(normalized);
+          allArgs.push(normalized);
+        }
+        continue;
+      }
+      if (tok.startsWith('--')) {
+        allArgs.push(tok);
+      }
+      continue;
+    }
+    // macOS ps -axo command= 不带引号，丢弃无引号位置路径碎片，交由 Electron 原生会话记忆恢复打开的工作区
+  }
+  return { allArgs, preservedProxyArgs };
+}
+
+function redactProxyCredentials(text) {
+  return String(text || '').replace(/(:\/\/)([^@\s/]+)@/g, '$1<redacted>@');
+}
+
+function readEnvCaseInsensitive(envObj, keyName, joinAll = false) {
+  const target = keyName.toLowerCase();
+  const vals = [];
+  for (const [k, v] of Object.entries(envObj)) {
+    if (k.toLowerCase() === target && v !== undefined && v !== null && String(v).trim() !== '') {
+      if (!joinAll) return String(v);
+      vals.push(String(v));
+    }
+  }
+  return joinAll ? vals.join(',') : '';
+}
+
+function writeProxyEnvPair(envObj, upperKey, val) {
+  const lowerKey = upperKey.toLowerCase();
+  envObj[upperKey] = val;
+  envObj[lowerKey] = val;
+}
+
+function buildRelaunchPlan(cmdLine, targetMeta = {}) {
+  const { allArgs, preservedProxyArgs } = extractRelaunchArgsFromCmdLine(cmdLine, targetMeta);
+  const args = ['--remote-debugging-port=0', ...allArgs];
+  const env = { ...(targetMeta?.baseEnv || process.env) };
+  const hasExplicitNoProxyFlag = preservedProxyArgs.includes('--no-proxy-server');
+  const proxyBypassArg = preservedProxyArgs.find((a) => a.startsWith('--proxy-bypass-list='));
+  const cliBypassEntries = proxyBypassArg
+    ? parseBypassListEntries(proxyBypassArg.slice('--proxy-bypass-list='.length))
+    : [];
+  const hasAnyProxyEnv = () =>
+    Boolean(
+      readEnvCaseInsensitive(env, 'HTTP_PROXY') ||
+        readEnvCaseInsensitive(env, 'HTTPS_PROXY') ||
+        readEnvCaseInsensitive(env, 'ALL_PROXY')
+    );
+
+  let proxySource = 'none';
+  let extraBypassEntries = [...cliBypassEntries];
+  if (hasExplicitNoProxyFlag) {
+    proxySource = 'cli-no-proxy';
+  } else if (hasAnyProxyEnv()) {
+    proxySource = 'inherited-env';
+  } else {
+    const proxyServerArg = preservedProxyArgs.find((a) => a.startsWith('--proxy-server='));
+    const resolved = proxyServerArg ? parseProxyServerSpec(proxyServerArg.slice('--proxy-server='.length)) : null;
+    if (resolved) {
+      proxySource = 'cli-proxy-flag';
+      if (resolved.httpProxy) {
+        writeProxyEnvPair(env, 'HTTP_PROXY', resolved.httpProxy);
+      }
+      if (resolved.httpsProxy) {
+        writeProxyEnvPair(env, 'HTTPS_PROXY', resolved.httpsProxy);
+      }
+      if (Array.isArray(resolved.noProxyEntries)) {
+        extraBypassEntries = [...extraBypassEntries, ...resolved.noProxyEntries];
+      }
+    }
+  }
+
+  // 只要最终环境携带任意 *_PROXY（包括 --no-proxy-server 下仍从父进程继承 HTTP_PROXY 的场景），一律合并环回与绕行列表以防 Node 侧代理库劫持环回请求
+  if (hasAnyProxyEnv()) {
+    const existingNoProxy = readEnvCaseInsensitive(env, 'NO_PROXY', true);
+    const mergedNoProxy = mergeNoProxyValue(existingNoProxy, extraBypassEntries);
+    writeProxyEnvPair(env, 'NO_PROXY', mergedNoProxy);
+  }
+
+  return { args, env, preservedProxyArgs, proxySource };
 }
 
 function maybeAutoRelaunchColdStartWithoutCdp(reachableChannels = null) {
@@ -5382,6 +5875,8 @@ function maybeAutoRelaunchColdStartWithoutCdp(reachableChannels = null) {
         writePrivateFileSync(CDP_RELAUNCH_GUARD_FILE, `${JSON.stringify(nextGuard, null, 2)}\n`, 'utf8', 0o600);
       } catch {}
 
+      const relaunchPlan = buildRelaunchPlan(proc.cmd, proc);
+
       // 终止刚冷启动的无标记主进程，并严格等待其优雅刷盘释放 SingletonLock 后再拉起带 --remote-debugging-port=0 的新进程
       try {
         process.kill(proc.pid, 'SIGTERM');
@@ -5403,13 +5898,15 @@ function maybeAutoRelaunchColdStartWithoutCdp(reachableChannels = null) {
       sleepSync(180);
 
       if (proc.appPath) {
-        spawnSync('/usr/bin/open', ['-a', proc.appPath, '--args', '--remote-debugging-port=0'], {
+        spawnSync('/usr/bin/open', ['-a', proc.appPath, '--args', ...relaunchPlan.args], {
+          env: relaunchPlan.env,
           stdio: 'ignore',
           timeout: 5000
         });
       }
 
-      const okMsg = `[Daemon] Cold-start auto-relaunched Antigravity (${proc.channel}, old PID ${proc.pid}, age ${proc.elapsedSec}s) with --remote-debugging-port=0.`;
+      const safeArgsLog = relaunchPlan.args.map(redactProxyCredentials).join(' ');
+      const okMsg = `[Daemon] Cold-start auto-relaunched Antigravity (${proc.channel}, old PID ${proc.pid}, age ${proc.elapsedSec}s) with ${safeArgsLog} (proxy=${relaunchPlan.proxySource}).`;
       console.log(okMsg);
       logDaemonEvent(okMsg);
       return true;

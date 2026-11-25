@@ -4,6 +4,36 @@
 
 ---
 
+## [v6.0.3-macos-hardened] - 2026-11-24
+
+> **适用平台**：仅限 **macOS（`darwin`）**（Antigravity `2.35.1+` / `2.35.0` / `2.34.0+`，向下完全兼容 `2.33.x` / `2.32.x` / `2.31.x` / `2.30.0`）  
+> **变更定位**：同步上游 [`Anarcadia/chuanban-antigravity-theme-patch`](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) **`v6.0.2` ~ `v6.0.3`**（`7f71800` ~ `c345f54`）全部 macOS 适用与跨平台更新（完整保留 macOS-only 精简架构与运行时安全加固；直接忽略 Windows / Linux 专属代码与依赖 `user/custom.js` 的插件指引）
+
+### Added, Fixed & Perf（Antigravity `2.35.1` 全链路适配 + 外观「跟随系统」开关 + Token 统计与指标胶囊升级 + 一键自动下载字体/ZIP 解压 + macOS 启动参数与代理保留 + `2,210` 条零冲突词典）
+- **新增外观界面独立「跟随系统 / Follow System」开关，保留浅色/深色预设配对（`core/runtime.js` / `core/theme.css`，同步上游 #41）**：
+  - 在「系统设置 → 外观界面」新增零配置膨胀的独立「跟随系统」拨动开关（直接复用客户端 `localStorage['antigravity-theme'] = 'system'`，不污染 `user/config.json`）：开启后随 macOS 昼夜自动切换当前选定的浅色 `preset`（如 `MO 莫兰迪色` / `✳️ Absolutely！`）与深色 `darkPreset`（如 `📖 暖纸深色` / `🌙 深色`），`A 原版配色` 与跟随系统解耦为纯手动原版直通档；
+  - 开启跟随期间点击同极性预设原地更新配对，点击相反极性预设立即切换预览并自动退出跟随；补齐 `DEFAULT_EXCLUDE_I18N` 双语免翻守卫、`APPEARANCE_SKIP_SELECTOR` 跳过 `sidebar-agent-row-` 与 `Swarm` 子帧 `native` 原版档跟随系统双向极性同步（`window.__ag_swarm_wrote_native_dark_vars` + `--ag-swarm-theme-rev` 播报器刷新）。
+- **「Token 统计」响应式布局升级、模型/Swarm 归因增强与底栏胶囊 `260ms` 悬浮意图及 Remote SSH 静默门禁（`core/runtime.js` / `core/theme.css` / `core/daemon.mjs`，同步上游 #38、#40）**：
+  - **Remote SSH 无本地库胶囊自动隐身（修复上游 #38）**：`parseConversationMetrics()` 显式输出 `dbFound: true/false` 并纳入 `renderedSig`，前端 `shouldShowPendingForBox()` 通过 `hasLocalMetricsDb()` 区分「本地库已落盘首轮采样中」与「Remote SSH 会话库在远端主机」，彻底解决 Remote SSH 会话底部无限常驻 `采样中…` 的问题；
+  - **底栏指标胶囊 `260ms` 悬浮意图与多胶囊零竞争**：为 `.ag-live-metrics-pill` 引入 `260ms` 悬停意图检测（`METRICS_HOVER_INTENT_MS`）与 `120ms` / `160ms` 隐藏宽限期，彻底消除光标从消息流滑向输入框时意外闪出详情浮层的打断感，并修复分屏多胶囊快速切换状态竞争；
+  - **`@container` 响应式 `4:3` 布局与 `subgrid` 对齐**：将弹窗宽度适配升级为纯 CSS `container-type: inline-size` + `@container (max-width: 720px)`、固定 `162px` `.ag-ta-daily-stage` 日记录舞台、常驻联动筛选栏、CSS `subgrid` 行列对齐与 `ResizeObserver` 渐隐溢出同步（关闭设置弹窗或热重载时自动 `disconnect()`）；配额池徽标精简为 `Claude` 并附 `Claude 与 GPT-OSS 共享配额池` 提示；
+  - **`2.35.0 / 2.35.1` SQLite 模型、Swarm 协作者与上下文口径对齐（`TA_CACHE_SCHEMA_REV = 5`）**：扩充 `TA_SLUG_LABELS` 至 **55 个模型标识**（覆盖 `Gemini 4 Hydrogen / Argon / Carbon / Neon`、`Claude Opus/Sonnet 5.5`、思考合并变体与 `GPT-OSS`）；支持 `Swarm` 协作者优先展示真实 `agentName`、零 Token 行跳过与 Claude 合并思考展示；修复后台任务唤醒场景多条 `[Message]` 步骤漏合并问题（精准排除 `/task-` 斜杠命令与 `sender=system` 系统回执），并在 `parseGenMetadataRow()` 解析 `estCtx` / `apiProvider` / `slug` / `thinkUnreported`。
+- **内置 macOS 字体一键自动下载器、`.zip` 自动解压与 `doctor` 源码同步检查（`install.mjs`，同步上游 `v6.0.2` 与 `v6.0.3`）**：
+  - 新增 `node install.mjs download-fonts` 与 `node install.mjs install-fonts --auto-download` 子命令：内置 3 枚 Anthropic 字体与 `170 MB` 精简拆分版 `Windows-Sarasa-Split-SC-TTF-v1.0.43.zip`（14 个 SC 字重 `.ttf`，macOS 通用；可选 `--super-ttc` 下载 `791 MB` `Sarasa-SuperTTC.ttc`）的 Google Drive 直链清单，采用 macOS `curl` → Node `22+` `fetch` 两级回退与二进制魔数校验（`PK\x03\x04` / TTF / `OTTO` / `true` / `ttcf`），拦截 HTML 拦截页与配额页；
+  - `install-fonts --from` 原生支持 `.zip` 压缩包与目录内自动发现字体 `.zip`（使用 macOS 原生 `unzip` / `ditto` 解压至 `0700` 暂存目录，跳过 `__MACOSX` 与压缩包内符号链接），找到 `0` 个字体或下载失败时明确返回 `ok: false` 与非零退出码；抽离 `buildFontReport()` 统一注入 `doctor` / `install` / `verify`；
+  - `doctor` 新增 `coreIntegrity.sourceSync` 字段，在仓库源码目录运行 `doctor` 时自动比对仓库 `core/*` 与已安装目录 SHA-256；修复 `probeRunningHostProcesses` / `readHostVersionAndProcesses` 的 macOS `.app` 路径正则以兼容父目录含空格。
+- **macOS `relaunch` 与 `M2` 冷启动接力参数/代理保留及日志脱敏（`install.mjs` / `core/daemon.mjs`，同步上游 #39 macOS 部分）**：
+  - `relaunch` 与守护进程 `M2` 冷启动接力自动提取并保留原进程命令行 `--flag`（过滤 `--updated` / `--remote-debugging-port` / `-psn_` 等一次性参数与无引号位置路径碎片）与代理参数/环境变量（按需补全 `HTTP_PROXY` / `HTTPS_PROXY` 并强制合并 `NO_PROXY` 环回列表 `localhost,127.0.0.1,::1`），输出日志自动对代理凭据与 iframe URL `token=` / `access_token=` 脱敏，并对高频 routine iframe 注入/附加日志按 `10` 分钟限频合并。
+- **Antigravity `2.35.1` 全面汉化（`2,210` 条零冲突词典）与 `Swarm` `1.5s` 轮询零闪烁护盾（`core/i18n.json` / `core/runtime.js`）**：
+  - 将零冲突基准词典从 `1,965` 条扩充至 **`2,210` 条**（同步适配 `2.35.1` Sentence Case 改写，保留 `DICT_CI` 向下兼容 `2.34.0`），新增 `step-plan-chip`、`items running/blocked`、`background tasks`、`waiting on you`、`Today/Yesterday`、`Allow plugin to ...?`、`Dismiss/Revoke/Resolved`、`plugin-theme-apply` 及面包屑用户实体名称免翻保护，并补充 `2.35.1` 用户内容容器到不可变排除域；
+  - 针对 `Swarm` 插件子帧每 `1.5s` 全量重绘导致的英文闪回，新增 `installSwarmDomShields()` 实例级 `innerHTML` / `textContent` / `title` 同步预翻译护盾与 `scheduleFlush` 微任务突发加速（切 `EN` 或关闭汉化自动卸载还原），扩充 `SWARM_FRAME_ONLY_DICT` 与 Hive 图谱/消息/芯片动态翻译规则；冷启动自愈同步兼容 `hasAppMountAnchor`。
+
+### Security & Ignored（安全加固保持与非 macOS / `custom.js` 项忽略）
+- **保留并扩展运行时安全加固**：继续保持 `core/manifest.json` 启动与热重载 Fail-Closed SHA-256 强校验、零 `user/custom.js` / `new Function` / `window.__AG_PATCH_CTX__` 暴露、零外部 `antigravity-zh-title-patch.py` 执行与告警卡、`0700`/`0600` 属主独占权限收敛及 `--no-service` 无常驻模式；新引入的字体缓存与 `.zip` 临时解压目录同步收紧为 `0700` 并在解压扫描阶段忽略符号链接。
+- **忽略 Windows / Linux 专属变更与 `custom.js` 插件指引**：依据本仓库 macOS-only 与安全加固定位，已直接忽略上游 `v6.0.2 ~ v6.0.3` 中的 Windows / Linux 专属代码（`syncWinTitleBarOverlay` 标题栏同步、`--custom-window-controls` CSS、Windows `.lnk` 限深扫描、Windows 系统代理注册表读取 `readWindowsSystemProxyFresh`/`detectWindowsSystemProxy`、PowerShell `.NET HttpClient` / `ZipFile` / UTF-16 注册表字体写入、`retire-super-ttc`、`unregisteredWinFonts`、`restartAntigravityRequired`、Linux `/proc/<pid>/cmdline`、`python3 -m zipfile` 及 `fc-cache`），并在 README 中不索引依赖 `user/custom.js` 的社区扩展（如 `ghang/ghang-antigravity-local-ui`），仅保留与 `theme-patch/` 完全独立的 macOS 原生插件索引。
+
+---
+
 ## [v6.0.1-macos-hardened] - 2026-11-23
 
 > **适用平台**：仅限 **macOS（`darwin`）**（Antigravity `2.34.0+` / `2.33.x`，向下完全兼容 `2.32.x` / `2.31.x` / `2.30.0`）  

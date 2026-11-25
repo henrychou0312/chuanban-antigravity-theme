@@ -3,13 +3,15 @@
  * chuanban-antigravity-theme-patch · macOS 专属一键安装、自检、CDP 接力重启、安全模式验证、打包与回滚 CLI (install.mjs)
  *
  * 支持子命令：
- *   node install.mjs install  [--channel auto|stable|insiders] [--preset native|morandi|absolutely|claude-desktop-purewhite|vintage-deep] [--dark-preset onyx|claude-warm] [--sync-user] [--with-launcher] [--no-service] [--target-dir <dir>]
- *   node install.mjs relaunch [--channel auto|stable|insiders] [--force] [--target-dir <dir>]
- *   node install.mjs install-fonts --from <font-folder-path>
- *   node install.mjs doctor   [--channel auto|stable|insiders] [--target-dir <dir>]
- *   node install.mjs verify   [--safe-mode] [--channel auto|stable|insiders] [--target-dir <dir>]
- *   node install.mjs rollback [--target-dir <dir>]
- *   node install.mjs uninstall [--target-dir <dir>]
+ *   node install.mjs install        [--channel auto|stable|insiders] [--preset native|morandi|absolutely|claude-desktop-purewhite|vintage-deep] [--dark-preset onyx|claude-warm] [--sync-user] [--with-launcher] [--no-service] [--target-dir <dir>]
+ *   node install.mjs relaunch       [--channel auto|stable|insiders] [--force] [--target-dir <dir>]
+ *   node install.mjs download-fonts [--dir <download-dir>] [--all] [--force] [--super-ttc]
+ *   node install.mjs install-fonts  --auto-download [--dir <download-dir>] [--all] [--force] [--super-ttc]
+ *   node install.mjs install-fonts  --from <font-folder-or-zip-path>
+ *   node install.mjs doctor         [--channel auto|stable|insiders] [--target-dir <dir>]
+ *   node install.mjs verify         [--safe-mode] [--channel auto|stable|insiders] [--target-dir <dir>]
+ *   node install.mjs rollback       [--target-dir <dir>]
+ *   node install.mjs uninstall      [--target-dir <dir>]
  *   node install.mjs build-manifest
  *   node install.mjs pack
  */
@@ -19,6 +21,8 @@ import path from 'node:path';
 import os from 'node:os';
 import http from 'node:http';
 import crypto from 'node:crypto';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { execSync, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
@@ -34,9 +38,69 @@ process.emitWarning = function (warning, ...rest) {
 };
 
 const GOOGLE_DRIVE_URL = 'https://drive.google.com/drive/folders/1NX92SgVUqtSjWg6bt6sIJXy-cn7J_boC';
+const SARASA_SPLIT_VIEW_URL = 'https://drive.google.com/file/d/1iVVvZXtwUcDiHy42tJ25X6N-JlOf3l7A/view?usp=sharing';
+const SARASA_GITHUB_RELEASES_URL = 'https://github.com/be5invis/Sarasa-Gothic/releases';
 const NOTION_GUIDE_URL = 'https://chuanban.notion.site/chuanban-antigravity-theme-patch-db7c5846f37546be9481cd791aed0554';
 const GITHUB_REPO_URL = 'https://github.com/henrychou0312/chuanban-antigravity-theme';
 const UPSTREAM_REPO_URL = 'https://github.com/Anarcadia/chuanban-antigravity-theme-patch';
+
+function buildGoogleDriveDirectUrl(fileId) {
+  return `https://drive.usercontent.google.com/download?id=${encodeURIComponent(fileId)}&export=download&confirm=t`;
+}
+
+const FONT_DOWNLOAD_CATALOG = {
+  anthropicSerifRegular: {
+    id: 'anthropicSerifRegular',
+    label: 'Anthropic Serif Regular',
+    filename: 'AnthropicSerif-Regular.ttf',
+    driveFileId: '1RZ1rMYYFlr5B-slSSZV-DCJtv5AfTMUV',
+    url: buildGoogleDriveDirectUrl('1RZ1rMYYFlr5B-slSSZV-DCJtv5AfTMUV'),
+    kind: 'font',
+    minBytes: 100 * 1024,
+    timeoutSec: 120
+  },
+  anthropicSerifBold: {
+    id: 'anthropicSerifBold',
+    label: 'Anthropic Serif Bold',
+    filename: 'AnthropicSerif-Bold.ttf',
+    driveFileId: '1-LJfTa1wasIqkoCCHI4mfVyh8tzreiAO',
+    url: buildGoogleDriveDirectUrl('1-LJfTa1wasIqkoCCHI4mfVyh8tzreiAO'),
+    kind: 'font',
+    minBytes: 100 * 1024,
+    timeoutSec: 120
+  },
+  anthropicMonoRegular: {
+    id: 'anthropicMonoRegular',
+    label: 'Anthropic Mono Regular',
+    filename: 'AnthropicMono-Regular.ttf',
+    driveFileId: '1NK_1Q2MBl5yHw94pC_kbzybDgqEFCZVk',
+    url: buildGoogleDriveDirectUrl('1NK_1Q2MBl5yHw94pC_kbzybDgqEFCZVk'),
+    kind: 'font',
+    minBytes: 50 * 1024,
+    timeoutSec: 120
+  },
+  sarasaSplitScZip: {
+    id: 'sarasaSplitScZip',
+    label: 'Sarasa Gothic SC Split TTF (14 weights, 170 MB ZIP)',
+    filename: 'Windows-Sarasa-Split-SC-TTF-v1.0.43.zip',
+    driveFileId: '1iVVvZXtwUcDiHy42tJ25X6N-JlOf3l7A',
+    url: buildGoogleDriveDirectUrl('1iVVvZXtwUcDiHy42tJ25X6N-JlOf3l7A'),
+    viewUrl: SARASA_SPLIT_VIEW_URL,
+    kind: 'zip',
+    minBytes: 50 * 1024 * 1024,
+    timeoutSec: 600
+  },
+  sarasaSuperTtc: {
+    id: 'sarasaSuperTtc',
+    label: 'Sarasa Gothic SuperTTC (791 MB TTC, optional)',
+    filename: 'Sarasa-SuperTTC.ttc',
+    driveFileId: '1i7mqpF2UpjCSR9oBPvPAD3CB6TJn9mwu',
+    url: buildGoogleDriveDirectUrl('1i7mqpF2UpjCSR9oBPvPAD3CB6TJn9mwu'),
+    kind: 'font',
+    minBytes: 200 * 1024 * 1024,
+    timeoutSec: 1200
+  }
+};
 
 const ALLOWED_ORIGINS = [
   'http://127.0.0.1',
@@ -114,7 +178,7 @@ function buildManifest(baseDir = __dirname) {
   }
   const manifest = {
     name: 'chuanban-antigravity-theme-patch',
-    version: '6.0.1',
+    version: '6.0.3',
     platform: 'darwin',
     minNodeVersion: '22.0.0',
     fullMetricsNodeVersion: '22.13.0',
@@ -289,7 +353,9 @@ function readHostVersionAndProcesses(channel = 'auto') {
       ) {
         continue;
       }
-      const appMatch = cmd.match(/^(\S.*?\/Antigravity(?:\s-\sInsiders)?\.app)\/Contents\/MacOS\/(Antigravity(?:\s-\sInsiders)?)(?:\s|$)/);
+      const appMatch = cmd.match(
+        /^(\/[^\r\n]*?\/Antigravity(?:\s-\sInsiders)?\.app)\/Contents\/MacOS\/(Antigravity(?:\s-\sInsiders)?)(?:\s|$)/
+      );
       if (!appMatch) continue;
       const ch = /Insiders/i.test(appMatch[2]) ? 'insiders' : 'stable';
       if ((ch === 'stable' && !allowStable) || (ch === 'insiders' && !allowInsiders)) continue;
@@ -298,6 +364,7 @@ function readHostVersionAndProcesses(channel = 'auto') {
         channel: ch,
         appPath: appMatch[1],
         exePath: `${appMatch[1]}/Contents/MacOS/${appMatch[2]}`,
+        cmd,
         hasCdpFlag: /--remote-debugging-port(?:=|\s|$)/.test(cmd)
       });
     }
@@ -333,8 +400,17 @@ async function detectEnvironment(channel = 'auto') {
 
   // v5.5.0+ UI 西文直连官方 Google Sans Flex 引擎，本地仅需 Anthropic Serif（对话正文）+ Anthropic Mono（代码）+ Sarasa（中文）
   const hasAnthropicSerifFont = allFontFiles.some((f) => /AnthropicSerif|Anthropic[ _-]Serif/i.test(f));
+  const hasAnthropicSerifRegular = allFontFiles.some((f) =>
+    /AnthropicSerif.*(Regular|Text)|Anthropic[ _-]Serif.*(Regular|Text)/i.test(f)
+  );
+  const hasAnthropicSerifBold = allFontFiles.some((f) =>
+    /AnthropicSerif.*(Bold|SemiBold)|Anthropic[ _-]Serif.*(Bold|SemiBold)/i.test(f)
+  );
   const hasAnthropicMonoFont = allFontFiles.some((f) => /AnthropicMono|Anthropic[ _-]Mono/i.test(f));
   const hasAnthropicFont = hasAnthropicSerifFont && hasAnthropicMonoFont;
+  const hasSarasaUiScSplit = allFontFiles.some((f) => /^Sarasa[-_ ]?Ui[-_ ]?SC[-_ ].*\.ttf$/i.test(f));
+  const hasSarasaMonoSlabScSplit = allFontFiles.some((f) => /^Sarasa[-_ ]?Mono[-_ ]?Slab[-_ ]?SC[-_ ].*\.ttf$/i.test(f));
+  const hasSarasaSplitScTtf = hasSarasaUiScSplit && hasSarasaMonoSlabScSplit;
   const hasSarasaFont = allFontFiles.some((f) => /Sarasa|更纱|更紗/i.test(f));
 
   const checkSingleChannel = (ch) => {
@@ -399,8 +475,11 @@ async function detectEnvironment(channel = 'auto') {
       : 'UNSUPPORTED (< 22.0, requires Node 22+)',
     hasAnthropicFont,
     hasAnthropicSerifFont,
+    hasAnthropicSerifRegular,
+    hasAnthropicSerifBold,
     hasAnthropicMonoFont,
     hasSarasaFont,
+    hasSarasaSplitScTtf,
     channel,
     appExists: chInfo.appExists || insidersInfo.appExists || hostRuntime.runningProcesses.length > 0,
     appVersion: hostRuntime.appVersion,
@@ -830,9 +909,9 @@ function ensureCdpLaunchers(channel = 'auto', options = {}) {
         '  <key>CFBundlePackageType</key>',
         '  <string>APPL</string>',
         '  <key>CFBundleShortVersionString</key>',
-        '  <string>6.0.1</string>',
+        '  <string>6.0.3</string>',
         '  <key>CFBundleVersion</key>',
-        '  <string>601</string>',
+        '  <string>603</string>',
         ...(iconBase ? ['  <key>CFBundleIconFile</key>', `  <string>${iconBase}</string>`] : []),
         '  <key>LSMinimumSystemVersion</key>',
         '  <string>12.0</string>',
@@ -895,6 +974,123 @@ function removeCdpLaunchers() {
   return removed;
 }
 
+function buildFontReport(env) {
+  const missingFonts = [];
+  if (!env.hasAnthropicSerifFont) {
+    missingFonts.push('Anthropic Serif (AnthropicSerif-Regular.ttf, AnthropicSerif-Bold.ttf)');
+  }
+  if (!env.hasAnthropicMonoFont) {
+    missingFonts.push('Anthropic Mono (AnthropicMono-Regular.ttf)');
+  }
+  if (!env.hasSarasaFont) {
+    missingFonts.push('Sarasa Gothic (Sarasa SC Split TTF ZIP 或 Sarasa-SuperTTC.ttc)');
+  }
+  const allRequiredFontsInstalled = missingFonts.length === 0;
+  const autoDownloadCommand = !allRequiredFontsInstalled ? 'node install.mjs install-fonts --auto-download' : null;
+
+  return {
+    uiLatinEngine: 'Google Sans Flex (native variable font)',
+    allRequiredInstalled: allRequiredFontsInstalled,
+    anthropicInstalled: env.hasAnthropicFont,
+    anthropicSerifInstalled: env.hasAnthropicSerifFont,
+    anthropicMonoInstalled: env.hasAnthropicMonoFont,
+    sarasaInstalled: env.hasSarasaFont,
+    sarasaSplitScInstalled: env.hasSarasaSplitScTtf,
+    missing: missingFonts,
+    autoDownloadCommand,
+    downloadUrl: !allRequiredFontsInstalled ? GOOGLE_DRIVE_URL : null,
+    directDownloadUrls: !allRequiredFontsInstalled
+      ? {
+          anthropicSerifRegular: FONT_DOWNLOAD_CATALOG.anthropicSerifRegular.url,
+          anthropicSerifBold: FONT_DOWNLOAD_CATALOG.anthropicSerifBold.url,
+          anthropicMonoRegular: FONT_DOWNLOAD_CATALOG.anthropicMonoRegular.url,
+          sarasaSplitScZip: FONT_DOWNLOAD_CATALOG.sarasaSplitScZip.url,
+          sarasaSplitScView: SARASA_SPLIT_VIEW_URL,
+          sarasaGithubReleases: SARASA_GITHUB_RELEASES_URL
+        }
+      : null
+  };
+}
+
+function extractBaseSemverTuple(verStr) {
+  const m = String(verStr || '').match(/v?(\d+)\.(\d+)\.(\d+)/i);
+  if (!m) return null;
+  return [parseInt(m[1], 10), parseInt(m[2], 10), parseInt(m[3], 10)];
+}
+
+function compareSemverTuples(a, b) {
+  if (!a || !b) return 0;
+  for (let i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] > b[i] ? 1 : -1;
+  }
+  return 0;
+}
+
+function inspectSourceSync(sourceDir, targetDir) {
+  if (isSameTargetPath(sourceDir, targetDir)) {
+    return { sameDirectory: true, inSync: true, sourceOlder: false, outdatedFiles: [] };
+  }
+  const srcManifestPath = path.join(sourceDir, 'core', 'manifest.json');
+  const dstManifestPath = path.join(targetDir, 'core', 'manifest.json');
+  if (!fs.existsSync(srcManifestPath)) return null;
+  if (!fs.existsSync(dstManifestPath)) {
+    return {
+      sourceDir,
+      targetDir,
+      inSync: false,
+      sourceOlder: false,
+      reason: 'target_manifest_missing',
+      outdatedFiles: ['core/manifest.json']
+    };
+  }
+  try {
+    const srcManifest = JSON.parse(fs.readFileSync(srcManifestPath, 'utf8'));
+    const dstManifest = JSON.parse(fs.readFileSync(dstManifestPath, 'utf8'));
+    const fileNames = new Set([
+      ...Object.keys(srcManifest.files || {}),
+      ...Object.keys(dstManifest.files || {})
+    ]);
+    const outdatedFiles = [];
+    for (const name of fileNames) {
+      const srcFile = path.join(sourceDir, 'core', name);
+      const dstFile = path.join(targetDir, 'core', name);
+      const srcSha = fs.existsSync(srcFile) ? sha256File(srcFile) : null;
+      const dstSha = fs.existsSync(dstFile) ? sha256File(dstFile) : null;
+      if (srcSha !== dstSha) {
+        outdatedFiles.push(`core/${name}`);
+      }
+    }
+    if (sha256File(srcManifestPath) !== sha256File(dstManifestPath)) {
+      outdatedFiles.push('core/manifest.json');
+    }
+    const srcInstaller = path.join(sourceDir, 'install.mjs');
+    const dstInstaller = path.join(targetDir, 'install.mjs');
+    if (fs.existsSync(srcInstaller) && fs.existsSync(dstInstaller) && sha256File(srcInstaller) !== sha256File(dstInstaller)) {
+      outdatedFiles.push('install.mjs');
+    }
+    const verCmp = compareSemverTuples(
+      extractBaseSemverTuple(srcManifest.version),
+      extractBaseSemverTuple(dstManifest.version)
+    );
+    const sourceOlder = verCmp < 0;
+    return {
+      sourceDir,
+      targetDir,
+      sourceVersion: srcManifest.version || null,
+      targetVersion: dstManifest.version || null,
+      sourceOlder,
+      inSync: outdatedFiles.length === 0,
+      outdatedFiles,
+      syncHint:
+        outdatedFiles.length > 0 && !sourceOlder
+          ? `node ${JSON.stringify(path.join(sourceDir, 'install.mjs'))} install`
+          : null
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function runDoctor() {
   const channel = getArg('--channel', 'auto');
   const defaultTarget = resolveGlobalInstallDir();
@@ -903,16 +1099,13 @@ async function runDoctor() {
     hasFlag('--target-dir') && !isSameTargetPath(targetDir, defaultTarget) && !hasFlag('--register-service');
   const env = await detectEnvironment(channel);
   const integrity = verifyCoreIntegrity(targetDir);
+  const sourceSync = inspectSourceSync(__dirname, targetDir);
   const live = await inspectLiveWindow(env);
 
   const cdpMissingFlag = !isCustomSandboxTarget && !live.reachable && env.cdpStatus === 'missing_opt_in_flag';
   const remediation = cdpMissingFlag ? `node ${JSON.stringify(path.join(targetDir, 'install.mjs'))} relaunch` : null;
 
-  const missingFonts = [];
-  if (!env.hasAnthropicSerifFont) missingFonts.push('Anthropic Serif (AnthropicSerif-Regular.ttf, AnthropicSerif-Bold.ttf)');
-  if (!env.hasAnthropicMonoFont) missingFonts.push('Anthropic Mono (AnthropicMono-Regular.ttf)');
-  if (!env.hasSarasaFont) missingFonts.push('Sarasa Gothic (Sarasa-SuperTTC.ttc)');
-  const allRequiredFontsInstalled = missingFonts.length === 0;
+  const fontsReport = buildFontReport(env);
   const launcherMode = env.launcherInstalled ? 'optional-launcher-app' : 'single-icon-m2-relay';
 
   const report = {
@@ -923,16 +1116,7 @@ async function runDoctor() {
       serviceExecPath: resolveStableNodeExecPath(),
       tier: env.tier
     },
-    fonts: {
-      uiLatinEngine: 'Google Sans Flex (native variable font)',
-      allRequiredInstalled: allRequiredFontsInstalled,
-      anthropicInstalled: env.hasAnthropicFont,
-      anthropicSerifInstalled: env.hasAnthropicSerifFont,
-      anthropicMonoInstalled: env.hasAnthropicMonoFont,
-      sarasaInstalled: env.hasSarasaFont,
-      missing: missingFonts,
-      downloadUrl: !allRequiredFontsInstalled ? GOOGLE_DRIVE_URL : null
-    },
+    fonts: fontsReport,
     antigravity: {
       channel: env.channel,
       appExists: env.appExists,
@@ -940,7 +1124,7 @@ async function runDoctor() {
       cdpStatus: live.reachable ? 'ready' : env.cdpStatus,
       launcherMode,
       launcherInstalled: env.launcherInstalled,
-      runningProcesses: env.runningProcesses,
+      runningProcesses: env.runningProcesses.map(({ cmd: _cmd, ...rest }) => rest),
       remediation,
       portFile: env.portFile,
       portFileExists: env.portFileExists,
@@ -949,7 +1133,8 @@ async function runDoctor() {
     coreIntegrity: {
       targetDir,
       clean: integrity.ok,
-      modifiedFiles: integrity.modified
+      modifiedFiles: integrity.modified,
+      ...(sourceSync && !sourceSync.sameDirectory ? { sourceSync } : {})
     },
     liveWindow: live
   };
@@ -1509,8 +1694,15 @@ async function runInstall() {
 
   const postEnv = isCustomSandboxTarget ? env : await detectEnvironment(currentCfg.channel);
   const live = isCustomSandboxTarget ? { skipped: true, reason: 'custom-target-dir' } : await inspectLiveWindow(postEnv);
+  const fontsReport = buildFontReport(postEnv);
   const needsCdpRelaunch =
     !isCustomSandboxTarget && !live.reachable && postEnv.cdpStatus === 'missing_opt_in_flag';
+  const warnings = [];
+  if (!fontsReport.allRequiredInstalled) {
+    warnings.push(
+      `Missing required fonts (${fontsReport.missing.join('; ')}). Run: node ${JSON.stringify(path.join(targetDir, 'install.mjs'))} install-fonts --auto-download`
+    );
+  }
   console.log(
     '\n[Install Complete]',
     JSON.stringify(
@@ -1523,6 +1715,8 @@ async function runInstall() {
         argvStatus,
         launcherStatus,
         serviceInfo,
+        fonts: fontsReport,
+        warnings,
         config: currentCfg,
         cdpStatus: isCustomSandboxTarget ? 'sandbox' : live.reachable ? 'ready' : postEnv.cdpStatus,
         relaunchHint: needsCdpRelaunch
@@ -1534,6 +1728,11 @@ async function runInstall() {
       2
     )
   );
+  if (!fontsReport.allRequiredInstalled) {
+    console.warn(
+      `\n[WARN] Missing fonts detected: ${fontsReport.missing.join(' | ')}\n       Auto-download & install: node ${JSON.stringify(path.join(targetDir, 'install.mjs'))} install-fonts --auto-download`
+    );
+  }
 }
 
 function hasRecentActiveConversationWal(channel = 'auto', windowSec = 15) {
@@ -1568,6 +1767,325 @@ function isPidRunning(pid) {
   } catch (err) {
     return Boolean(err && err.code === 'EPERM');
   }
+}
+
+function tokenizeRelaunchCmdLine(cmdLine) {
+  const src = String(cmdLine || '');
+  const tokens = [];
+  // macOS ps -axo command= 输出无外层 shell 引号，禁用单引号配对以免路径中的撇号（如 John's Repo）吞没后续参数
+  let cur = '';
+  let inDoubleQuote = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (inDoubleQuote) {
+      if (ch === '\\' && i + 1 < src.length && src[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else if (ch === '"') {
+        inDoubleQuote = false;
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inDoubleQuote = true;
+    } else if (/\s/.test(ch)) {
+      if (cur.length > 0) {
+        tokens.push(cur);
+        cur = '';
+      }
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.length > 0) tokens.push(cur);
+  return tokens;
+}
+
+function stripLeadingExecutableFromCmdLine(cmdLine, exePath = '') {
+  const src = String(cmdLine || '').trimStart();
+  if (!src) return '';
+  const exe = String(exePath || '').trim();
+  if (exe) {
+    const quotedExe = `"${exe}"`;
+    if (src.startsWith(quotedExe)) {
+      const rest = src.slice(quotedExe.length);
+      if (!rest || /^\s/.test(rest)) return rest.trimStart();
+    }
+    if (src.startsWith(exe)) {
+      const rest = src.slice(exe.length);
+      if (!rest || /^\s/.test(rest)) return rest.trimStart();
+    }
+  }
+  const macAppMatch = src.match(
+    /^(?:"[^"]+"|\/[^\r\n]*?\/Antigravity(?:\s-\sInsiders)?\.app\/Contents\/MacOS\/Antigravity(?:\s-\sInsiders)?)(?=\s|$)/
+  );
+  if (macAppMatch) return src.slice(macAppMatch[0].length).trimStart();
+  if (src.startsWith('"')) {
+    const endQuote = src.indexOf('"', 1);
+    if (endQuote > 0) return src.slice(endQuote + 1).trimStart();
+  }
+  const firstWs = src.search(/\s/);
+  return firstWs < 0 ? '' : src.slice(firstWs + 1).trimStart();
+}
+
+function normalizeProxyUrl(address, defaultScheme = 'http') {
+  const raw = String(address || '').trim();
+  if (!raw) return '';
+  // Chromium --proxy-server 允许逗号分隔回退链（如 http://127.0.0.1:7890,direct://），提取首个真实代理节点
+  const firstHop = raw
+    .split(',')
+    .map((s) => s.trim())
+    .find((s) => s && !/^direct:\/\//i.test(s));
+  if (!firstHop) return '';
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(firstHop)) return firstHop;
+  return `${defaultScheme}://${firstHop}`;
+}
+
+function parseProxyServerSpec(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return null;
+  if (!text.includes('=')) {
+    const url = normalizeProxyUrl(text, 'http');
+    return url ? { httpProxy: url, httpsProxy: url } : null;
+  }
+  const map = Object.create(null);
+  for (const entry of text.split(';')) {
+    const eq = entry.indexOf('=');
+    if (eq <= 0) continue;
+    const scheme = entry.slice(0, eq).trim().toLowerCase();
+    const val = entry.slice(eq + 1).trim();
+    if (scheme && val) map[scheme] = val;
+  }
+  let httpProxy = map.http ? normalizeProxyUrl(map.http, 'http') : '';
+  let httpsProxy = map.https ? normalizeProxyUrl(map.https, 'http') : '';
+  if (map.socks) {
+    // 无版本后缀的 socks= 配置，现代本地代理客户端普遍提供 SOCKS5 混合监听，Go net/http 亦仅支持 socks5://
+    const socks = normalizeProxyUrl(map.socks, 'socks5');
+    if (!httpProxy) httpProxy = socks;
+    if (!httpsProxy) httpsProxy = socks;
+  }
+  if (!httpProxy && httpsProxy) httpProxy = httpsProxy;
+  if (!httpsProxy && httpProxy) httpsProxy = httpProxy;
+  if (!httpProxy && !httpsProxy) {
+    const firstVal = Object.values(map)[0];
+    if (firstVal) {
+      const url = normalizeProxyUrl(firstVal, 'http');
+      httpProxy = url;
+      httpsProxy = url;
+    }
+  }
+  return httpProxy || httpsProxy ? { httpProxy, httpsProxy } : null;
+}
+
+function normalizeBypassTokenForNoProxy(rawEntry) {
+  const trimmed = String(rawEntry || '').trim();
+  if (!trimmed) return '';
+  const low = trimmed.toLowerCase();
+  if (low === '<local>' || low === '<-loopback>') return '';
+  if (low === '[::1]') return '::1';
+  if (trimmed === '*.*.*.*') return '*';
+
+  // 分离非 IPv6 末尾端口（如 192.168.1.*:8080 或 *corp.com:8443）
+  let hostPart = trimmed;
+  let portSuffix = '';
+  const firstColon = trimmed.indexOf(':');
+  const lastColon = trimmed.lastIndexOf(':');
+  if (firstColon > 0 && firstColon === lastColon && /^\d{1,5}$/.test(trimmed.slice(firstColon + 1))) {
+    hostPart = trimmed.slice(0, firstColon);
+    portSuffix = trimmed.slice(firstColon);
+  }
+
+  if (/^\d{1,3}(?:\.(?:\d{1,3}|\*)){1,3}$/.test(hostPart) && hostPart.includes('*')) {
+    const parts = hostPart.split('.');
+    const starIdx = parts.indexOf('*');
+    if (starIdx >= 1 && starIdx <= 3 && parts.slice(starIdx).every((p) => p === '*')) {
+      const nums = parts.slice(0, starIdx).map((n) => Number(n));
+      if (nums.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) {
+        const octets = [...nums, 0, 0, 0].slice(0, 4);
+        // Go httpproxy 对 CIDR 条目不支持附带端口后缀，统一输出标准网段 CIDR
+        return `${octets.join('.')}/${starIdx * 8}`;
+      }
+    }
+    return '';
+  }
+
+  // 将 *corp.com（无前导点号）转换为 Go/Node 支持的子域后缀 .corp.com
+  if (/^\*[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$/i.test(hostPart)) {
+    return `.${hostPart.slice(1)}${portSuffix}`;
+  }
+
+  return `${hostPart}${portSuffix}`;
+}
+
+function parseBypassListEntries(raw) {
+  const out = [];
+  for (const part of String(raw || '').split(/[;,\s]+/)) {
+    const norm = normalizeBypassTokenForNoProxy(part);
+    if (norm) out.push(norm);
+  }
+  return out;
+}
+
+function mergeNoProxyValue(existingRaw, extraEntries = []) {
+  const LOOPBACK_ENTRIES = ['localhost', '127.0.0.1', '::1'];
+  const merged = [];
+  const seen = new Set();
+  const pushItem = (rawItem) => {
+    const norm = normalizeBypassTokenForNoProxy(rawItem);
+    if (!norm) return;
+    const key = norm.toLowerCase();
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(norm);
+  };
+  for (const part of String(existingRaw || '').split(/[,;]+/)) {
+    pushItem(part);
+  }
+  for (const extra of extraEntries) {
+    pushItem(extra);
+  }
+  for (const lb of LOOPBACK_ENTRIES) {
+    pushItem(lb);
+  }
+  return merged.join(',');
+}
+
+function extractRelaunchArgsFromCmdLine(cmdLine, meta = {}) {
+  const tokens = Array.isArray(meta?.procArgs)
+    ? meta.procArgs
+    : (() => {
+        const rest = stripLeadingExecutableFromCmdLine(cmdLine, meta?.exePath || '');
+        return rest ? tokenizeRelaunchCmdLine(rest) : [];
+      })();
+  if (tokens.length === 0) return { allArgs: [], preservedProxyArgs: [] };
+
+  const VALUE_FLAGS = new Set(['--proxy-server', '--proxy-bypass-list', '--proxy-pac-url']);
+  const BOOL_FLAGS = new Set(['--no-proxy-server', '--proxy-auto-detect']);
+  const DROP_EXACT_FLAGS = new Set(['--updated', '--remote-debugging-pipe', '--inspect', '--inspect-brk']);
+  const DROP_VALUE_FLAGS = new Set(['--remote-debugging-port', '--type']);
+  const DROP_PREFIXES = ['--squirrel-', '-psn_', '--inspect=', '--inspect-brk='];
+  const allArgs = [];
+  const preservedProxyArgs = [];
+  const seenProxy = new Set();
+  for (let i = 0; i < tokens.length; i++) {
+    const tok = tokens[i];
+    if (!tok) continue;
+    if (tok.startsWith('-')) {
+      const lowTok = tok.toLowerCase();
+      if (DROP_PREFIXES.some((pfx) => lowTok.startsWith(pfx))) {
+        continue;
+      }
+      const eqIdx = tok.indexOf('=');
+      const flag = (eqIdx >= 0 ? tok.slice(0, eqIdx) : tok).toLowerCase();
+      if (DROP_EXACT_FLAGS.has(flag)) continue;
+      if (DROP_VALUE_FLAGS.has(flag)) {
+        if (eqIdx < 0 && i + 1 < tokens.length && !tokens[i + 1].startsWith('-')) {
+          i++;
+        }
+        continue;
+      }
+      if (BOOL_FLAGS.has(flag)) {
+        if (!seenProxy.has(flag)) {
+          seenProxy.add(flag);
+          preservedProxyArgs.push(flag);
+          allArgs.push(flag);
+        }
+        continue;
+      }
+      if (VALUE_FLAGS.has(flag)) {
+        let val = '';
+        if (eqIdx >= 0) {
+          val = tok.slice(eqIdx + 1).trim();
+        } else if (i + 1 < tokens.length && !tokens[i + 1].startsWith('--')) {
+          val = tokens[++i].trim();
+        }
+        if (val && !seenProxy.has(flag)) {
+          seenProxy.add(flag);
+          const normalized = `${flag}=${val}`;
+          preservedProxyArgs.push(normalized);
+          allArgs.push(normalized);
+        }
+        continue;
+      }
+      if (tok.startsWith('--')) {
+        allArgs.push(tok);
+      }
+      continue;
+    }
+    // macOS ps -axo command= 不带引号，丢弃无引号位置路径碎片，交由 Electron 原生会话记忆恢复打开的工作区
+  }
+  return { allArgs, preservedProxyArgs };
+}
+
+function redactProxyCredentials(text) {
+  return String(text || '').replace(/(:\/\/)([^@\s/]+)@/g, '$1<redacted>@');
+}
+
+function readEnvCaseInsensitive(envObj, keyName, joinAll = false) {
+  const target = keyName.toLowerCase();
+  const vals = [];
+  for (const [k, v] of Object.entries(envObj)) {
+    if (k.toLowerCase() === target && v !== undefined && v !== null && String(v).trim() !== '') {
+      if (!joinAll) return String(v);
+      vals.push(String(v));
+    }
+  }
+  return joinAll ? vals.join(',') : '';
+}
+
+function writeProxyEnvPair(envObj, upperKey, val) {
+  const lowerKey = upperKey.toLowerCase();
+  envObj[upperKey] = val;
+  envObj[lowerKey] = val;
+}
+
+function buildRelaunchPlan(cmdLine, targetMeta = {}) {
+  const { allArgs, preservedProxyArgs } = extractRelaunchArgsFromCmdLine(cmdLine, targetMeta);
+  const args = ['--remote-debugging-port=0', ...allArgs];
+  const env = { ...(targetMeta?.baseEnv || process.env) };
+  const hasExplicitNoProxyFlag = preservedProxyArgs.includes('--no-proxy-server');
+  const proxyBypassArg = preservedProxyArgs.find((a) => a.startsWith('--proxy-bypass-list='));
+  const cliBypassEntries = proxyBypassArg
+    ? parseBypassListEntries(proxyBypassArg.slice('--proxy-bypass-list='.length))
+    : [];
+  const hasAnyProxyEnv = () =>
+    Boolean(
+      readEnvCaseInsensitive(env, 'HTTP_PROXY') ||
+        readEnvCaseInsensitive(env, 'HTTPS_PROXY') ||
+        readEnvCaseInsensitive(env, 'ALL_PROXY')
+    );
+
+  let proxySource = 'none';
+  let extraBypassEntries = [...cliBypassEntries];
+  if (hasExplicitNoProxyFlag) {
+    proxySource = 'cli-no-proxy';
+  } else if (hasAnyProxyEnv()) {
+    proxySource = 'inherited-env';
+  } else {
+    const proxyServerArg = preservedProxyArgs.find((a) => a.startsWith('--proxy-server='));
+    const resolved = proxyServerArg ? parseProxyServerSpec(proxyServerArg.slice('--proxy-server='.length)) : null;
+    if (resolved) {
+      proxySource = 'cli-proxy-flag';
+      if (resolved.httpProxy) {
+        writeProxyEnvPair(env, 'HTTP_PROXY', resolved.httpProxy);
+      }
+      if (resolved.httpsProxy) {
+        writeProxyEnvPair(env, 'HTTPS_PROXY', resolved.httpsProxy);
+      }
+      if (Array.isArray(resolved.noProxyEntries)) {
+        extraBypassEntries = [...extraBypassEntries, ...resolved.noProxyEntries];
+      }
+    }
+  }
+
+  // 只要最终环境携带任意 *_PROXY（包括 --no-proxy-server 下仍从父进程继承 HTTP_PROXY 的场景），一律合并环回与绕行列表以防 Node 侧代理库劫持环回请求
+  if (hasAnyProxyEnv()) {
+    const existingNoProxy = readEnvCaseInsensitive(env, 'NO_PROXY', true);
+    const mergedNoProxy = mergeNoProxyValue(existingNoProxy, extraBypassEntries);
+    writeProxyEnvPair(env, 'NO_PROXY', mergedNoProxy);
+  }
+
+  return { args, env, preservedProxyArgs, proxySource };
 }
 
 async function runRelaunch() {
@@ -1634,6 +2152,8 @@ async function runRelaunch() {
     launchTarget = { channel: channel === 'insiders' ? 'insiders' : 'stable', appPath };
   }
 
+  const relaunchPlan = buildRelaunchPlan(launchTarget.cmd, launchTarget);
+
   for (const p of procsToStop) {
     if (p.appPath) {
       spawnSync('osascript', ['-e', `tell application "${p.appPath}" to quit`], { stdio: 'ignore', timeout: 3000 });
@@ -1657,7 +2177,8 @@ async function runRelaunch() {
   sleepSync(250);
 
   if (launchTarget.appPath && fs.existsSync(launchTarget.appPath)) {
-    spawnSync('/usr/bin/open', ['-a', launchTarget.appPath, '--args', '--remote-debugging-port=0'], {
+    spawnSync('/usr/bin/open', ['-a', launchTarget.appPath, '--args', ...relaunchPlan.args], {
+      env: relaunchPlan.env,
       stdio: 'ignore',
       timeout: 5000
     });
@@ -1687,6 +2208,8 @@ async function runRelaunch() {
       {
         ok,
         stoppedPids: procsToStop.map((p) => p.pid),
+        proxySource: relaunchPlan.proxySource,
+        preservedProxyArgs: relaunchPlan.preservedProxyArgs.map(redactProxyCredentials),
         version: live.state?.version || null,
         themeStyle: Boolean(live.state?.hasStyle),
         dictCount: live.state?.dictCount || 0,
@@ -1713,6 +2236,7 @@ async function runVerify() {
   spawnSync(process.execPath, daemonArgs, { stdio: 'inherit' });
   const env = await detectEnvironment(channel);
   const live = await inspectLiveWindow(env);
+  const fontsReport = buildFontReport(env);
   const ok = Boolean(live.reachable && (live.state?.hasStyle || live.pages === 0));
   console.log(
     JSON.stringify(
@@ -1722,6 +2246,11 @@ async function runVerify() {
         themeStyle: Boolean(live.state?.hasStyle),
         safeMode,
         channel,
+        fonts: {
+          allRequiredInstalled: fontsReport.allRequiredInstalled,
+          missing: fontsReport.missing,
+          autoDownloadCommand: fontsReport.autoDownloadCommand
+        },
         live
       },
       null,
@@ -1793,53 +2322,418 @@ async function runRollback() {
   );
 }
 
-function runInstallFonts() {
-  const fromDir = getArg('--from', null);
-  if (!fromDir || !fs.existsSync(fromDir)) {
-    console.error('Usage: node install.mjs install-fonts --from <font-folder-path>');
+function validateDownloadedBinary(filePath, { kind = 'font', minBytes = 1024 } = {}) {
+  try {
+    if (!fs.existsSync(filePath)) return { ok: false, reason: 'file_missing', bytes: 0 };
+    const st = fs.statSync(filePath);
+    const bytes = st.size;
+    const fd = fs.openSync(filePath, 'r');
+    const head = Buffer.alloc(Math.min(64, Math.max(0, bytes)));
+    try {
+      if (head.length > 0) fs.readSync(fd, head, 0, head.length, 0);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const asciiPrefix = head.toString('utf8').trimStart().toLowerCase();
+    if (asciiPrefix.startsWith('<!doctype') || asciiPrefix.startsWith('<html') || asciiPrefix.startsWith('<?xml')) {
+      return { ok: false, reason: 'html_interstitial_or_quota_exceeded', bytes };
+    }
+    if (bytes < minBytes) {
+      return { ok: false, reason: 'file_too_small', bytes, minBytes };
+    }
+    if (kind === 'zip') {
+      const isZip = head.length >= 4 && head[0] === 0x50 && head[1] === 0x4b && head[2] === 0x03 && head[3] === 0x04;
+      if (!isZip) return { ok: false, reason: 'invalid_zip_magic', bytes };
+    } else if (kind === 'font') {
+      const tag = head.length >= 4 ? head.subarray(0, 4).toString('ascii') : '';
+      const isTtf = head.length >= 4 && head[0] === 0x00 && head[1] === 0x01 && head[2] === 0x00 && head[3] === 0x00;
+      const isValidFont = isTtf || tag === 'OTTO' || tag === 'true' || tag === 'ttcf';
+      if (!isValidFont) return { ok: false, reason: 'invalid_font_magic', bytes };
+    }
+    return { ok: true, bytes };
+  } catch (err) {
+    return { ok: false, reason: 'validation_error', error: String(err?.message || err), bytes: 0 };
+  }
+}
+
+async function downloadFontAsset(asset, downloadDir, { force = false } = {}) {
+  fs.mkdirSync(downloadDir, { recursive: true, mode: 0o700 });
+  try {
+    fs.chmodSync(downloadDir, 0o700);
+  } catch {}
+  const finalPath = path.join(downloadDir, asset.filename);
+  if (!force && fs.existsSync(finalPath)) {
+    const cachedCheck = validateDownloadedBinary(finalPath, asset);
+    if (cachedCheck.ok) {
+      return {
+        ok: true,
+        id: asset.id,
+        filename: asset.filename,
+        filePath: finalPath,
+        cached: true,
+        bytes: cachedCheck.bytes,
+        method: 'cache'
+      };
+    }
+  }
+
+  const partPath = `${finalPath}.part-${process.pid}-${Date.now()}`;
+  const cleanupPart = () => {
+    try {
+      if (fs.existsSync(partPath)) fs.unlinkSync(partPath);
+    } catch {}
+  };
+  const timeoutSec = asset.timeoutSec || 300;
+  const attempts = [];
+
+  // Strategy 1: macOS 内置 curl（原生支持 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY）
+  try {
+    const curlArgs = [
+      '-fSL',
+      '--retry',
+      '2',
+      '--retry-delay',
+      '2',
+      '--connect-timeout',
+      '15',
+      '--max-time',
+      String(timeoutSec),
+      '-o',
+      partPath,
+      asset.url
+    ];
+    const r = spawnSync('curl', curlArgs, {
+      stdio: ['ignore', 'ignore', 'pipe'],
+      encoding: 'utf8',
+      timeout: (timeoutSec + 15) * 1000
+    });
+    if (r.status === 0 && !r.error) {
+      const chk = validateDownloadedBinary(partPath, asset);
+      if (chk.ok) {
+        fs.renameSync(partPath, finalPath);
+        return {
+          ok: true,
+          id: asset.id,
+          filename: asset.filename,
+          filePath: finalPath,
+          cached: false,
+          bytes: chk.bytes,
+          method: 'curl'
+        };
+      }
+      attempts.push({ method: 'curl', ok: false, ...chk });
+    } else {
+      attempts.push({
+        method: 'curl',
+        ok: false,
+        status: r.status,
+        error: String(r.error?.message || r.stderr || '').trim().slice(0, 240)
+      });
+    }
+  } catch (err) {
+    attempts.push({ method: 'curl', ok: false, error: String(err?.message || err).slice(0, 240) });
+  }
+  cleanupPart();
+
+  // Strategy 2: Node 22+ 原生 fetch 流式下载兜底
+  try {
+    const res = await fetch(asset.url, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(timeoutSec * 1000)
+    });
+    if (!res.ok || !res.body) {
+      attempts.push({ method: 'node-fetch', ok: false, status: res.status });
+    } else {
+      await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(partPath, { mode: 0o600 }));
+      const chk = validateDownloadedBinary(partPath, asset);
+      if (chk.ok) {
+        fs.renameSync(partPath, finalPath);
+        return {
+          ok: true,
+          id: asset.id,
+          filename: asset.filename,
+          filePath: finalPath,
+          cached: false,
+          bytes: chk.bytes,
+          method: 'node-fetch'
+        };
+      }
+      attempts.push({ method: 'node-fetch', ok: false, ...chk });
+    }
+  } catch (err) {
+    attempts.push({ method: 'node-fetch', ok: false, error: String(err?.message || err).slice(0, 240) });
+  }
+  cleanupPart();
+
+  return {
+    ok: false,
+    id: asset.id,
+    filename: asset.filename,
+    url: asset.url,
+    manualUrl: asset.viewUrl || GOOGLE_DRIVE_URL,
+    attempts
+  };
+}
+
+function extractZipArchive(zipPath, destDir) {
+  fs.mkdirSync(destDir, { recursive: true, mode: 0o700 });
+  const uz = spawnSync('unzip', ['-oq', zipPath, '-d', destDir], { encoding: 'utf8', timeout: 120000 });
+  if (uz.status === 0 && !uz.error) return { ok: true, method: 'unzip' };
+  const dt = spawnSync('ditto', ['-xk', zipPath, destDir], { encoding: 'utf8', timeout: 120000 });
+  if (dt.status === 0 && !dt.error) return { ok: true, method: 'ditto' };
+  return {
+    ok: false,
+    error: String(uz.stderr || dt.stderr || uz.error?.message || 'Failed to extract zip archive').trim().slice(0, 240)
+  };
+}
+
+function selectMissingFontAssets(env, { includeAll = false, useSuperTtc = false } = {}) {
+  const assets = [];
+  if (includeAll || !env.hasAnthropicSerifFont || !env.hasAnthropicSerifRegular) {
+    if (includeAll || !env.hasAnthropicSerifFont || (!env.hasAnthropicSerifRegular && env.hasAnthropicSerifBold)) {
+      assets.push(FONT_DOWNLOAD_CATALOG.anthropicSerifRegular);
+    }
+  }
+  if (includeAll || !env.hasAnthropicSerifFont || !env.hasAnthropicSerifBold) {
+    if (includeAll || !env.hasAnthropicSerifFont || (env.hasAnthropicSerifRegular && !env.hasAnthropicSerifBold)) {
+      assets.push(FONT_DOWNLOAD_CATALOG.anthropicSerifBold);
+    }
+  }
+  if (includeAll || !env.hasAnthropicMonoFont) {
+    assets.push(FONT_DOWNLOAD_CATALOG.anthropicMonoRegular);
+  }
+  if (includeAll || !env.hasSarasaFont) {
+    assets.push(useSuperTtc ? FONT_DOWNLOAD_CATALOG.sarasaSuperTtc : FONT_DOWNLOAD_CATALOG.sarasaSplitScZip);
+  }
+  return assets;
+}
+
+async function downloadFontsBatch({ downloadDir, includeAll = false, force = false, useSuperTtc = false } = {}) {
+  const env = await detectEnvironment('auto');
+  const assets = selectMissingFontAssets(env, { includeAll, useSuperTtc });
+  const targetDownloadDir = path.resolve(downloadDir || path.join(os.tmpdir(), 'chuanban-ag-fonts-cache'));
+  fs.mkdirSync(targetDownloadDir, { recursive: true, mode: 0o700 });
+  try {
+    fs.chmodSync(targetDownloadDir, 0o700);
+  } catch {}
+  const results = [];
+  for (const asset of assets) {
+    process.stderr.write(`[Fonts] Downloading ${asset.filename} ...\n`);
+    const r = await downloadFontAsset(asset, targetDownloadDir, { force });
+    results.push(r);
+  }
+  const failed = results.filter((r) => !r.ok);
+  return {
+    ok: failed.length === 0,
+    downloadDir: targetDownloadDir,
+    requestedCount: assets.length,
+    downloadedCount: results.filter((r) => r.ok && !r.cached).length,
+    cachedCount: results.filter((r) => r.ok && r.cached).length,
+    failedCount: failed.length,
+    results,
+    manualFallbackHint:
+      failed.length > 0
+        ? `Automatic download failed for ${failed.map((f) => f.filename).join(', ')} (likely terminal network/proxy restriction or Google Drive temporary quota). Download manually in browser from ${GOOGLE_DRIVE_URL} (Sarasa SC Split ZIP: ${SARASA_SPLIT_VIEW_URL}), then run: node install.mjs install-fonts --from "<downloaded-folder-or-zip>"`
+        : null
+  };
+}
+
+async function runDownloadFontsCmd() {
+  const downloadDir = getArg('--dir', path.join(os.tmpdir(), 'chuanban-ag-fonts-cache'));
+  const includeAll = hasFlag('--all');
+  const force = hasFlag('--force');
+  const useSuperTtc = hasFlag('--super-ttc');
+  const summary = await downloadFontsBatch({ downloadDir, includeAll, force, useSuperTtc });
+  console.log(JSON.stringify(summary, null, 2));
+  if (!summary.ok) process.exitCode = 1;
+}
+
+async function runInstallFonts() {
+  const autoDownload = hasFlag('--auto-download');
+  const fromArg = getArg('--from', null);
+
+  if (!autoDownload && !fromArg) {
+    console.error(
+      'Usage:\n  node install.mjs install-fonts --auto-download [--dir <cache-dir>] [--all] [--force] [--super-ttc]\n  node install.mjs install-fonts --from <font-folder-or-zip-path>'
+    );
     process.exit(1);
   }
+  if (fromArg && !fs.existsSync(fromArg)) {
+    console.error(`[ERROR] --from path does not exist: ${fromArg}`);
+    process.exit(1);
+  }
+
+  let downloadSummary = null;
+  const sourceInputs = [];
+  if (fromArg) sourceInputs.push(path.resolve(fromArg));
+  if (autoDownload) {
+    downloadSummary = await downloadFontsBatch({
+      downloadDir: getArg('--dir', null),
+      includeAll: hasFlag('--all'),
+      force: hasFlag('--force'),
+      useSuperTtc: hasFlag('--super-ttc')
+    });
+    if (downloadSummary.requestedCount > 0) {
+      for (const r of downloadSummary.results) {
+        if (r.ok && r.filePath && fs.existsSync(r.filePath)) {
+          sourceInputs.push(r.filePath);
+        }
+      }
+    }
+    if (downloadSummary.requestedCount === 0 && sourceInputs.length === 0) {
+      const postEnv = await detectEnvironment('auto');
+      console.log(
+        JSON.stringify(
+          {
+            ok: true,
+            alreadyInstalled: true,
+            platform: 'darwin',
+            downloadSummary,
+            postCheck: buildFontReport(postEnv)
+          },
+          null,
+          2
+        )
+      );
+      return;
+    }
+  }
+
   const home = os.homedir();
   const destDir = path.join(home, 'Library', 'Fonts');
 
   fs.mkdirSync(destDir, { recursive: true });
   const installed = [];
   const skipped = [];
+  const extractedArchives = [];
+  const archiveExtractErrors = [];
+  const tempExtractDirs = [];
+  const fontFileQueue = [];
+  const seenSourceFiles = new Set();
 
-  const walkFonts = (dir) => {
+  const collectFontsFromDir = (dir, depth = 0, ignoreSymlinks = false) => {
     for (const entry of fs.readdirSync(dir)) {
+      if (entry === '.' || entry === '..' || entry.includes('/') || entry.includes('\\')) continue;
       const full = path.join(dir, entry);
-      const st = fs.statSync(full);
+      let st;
+      try {
+        st = ignoreSymlinks ? fs.lstatSync(full) : fs.statSync(full);
+      } catch {
+        continue;
+      }
+      if (ignoreSymlinks && st.isSymbolicLink()) continue;
       if (st.isDirectory()) {
-        walkFonts(full);
+        if (entry === '__MACOSX') continue;
+        collectFontsFromDir(full, depth + 1, ignoreSymlinks);
       } else if (/\.(ttf|otf|ttc)$/i.test(entry)) {
-        const destPath = path.join(destDir, entry);
-        if (isSameTargetPath(full, destPath)) {
-          skipped.push(destPath);
+        const key = canonicalPath(full).toLowerCase();
+        if (!seenSourceFiles.has(key)) {
+          seenSourceFiles.add(key);
+          fontFileQueue.push({ full, entry });
+        }
+      } else if (depth <= 2 && /\.zip$/i.test(entry) && /sarasa|anthropic|font/i.test(entry)) {
+        const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-font-zip-'));
+        try {
+          fs.chmodSync(stageDir, 0o700);
+        } catch {}
+        tempExtractDirs.push(stageDir);
+        const ex = extractZipArchive(full, stageDir);
+        if (ex.ok) {
+          extractedArchives.push({ archive: full, method: ex.method });
+          collectFontsFromDir(stageDir, depth + 1, true);
         } else {
-          fs.copyFileSync(full, destPath);
-          installed.push(destPath);
+          archiveExtractErrors.push({ archive: full, error: ex.error });
         }
       }
     }
   };
 
-  walkFonts(path.resolve(fromDir));
+  try {
+    for (const src of sourceInputs) {
+      const st = fs.statSync(src);
+      if (st.isFile()) {
+        if (/\.zip$/i.test(src)) {
+          const stageDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-font-zip-'));
+          try {
+            fs.chmodSync(stageDir, 0o700);
+          } catch {}
+          tempExtractDirs.push(stageDir);
+          const ex = extractZipArchive(src, stageDir);
+          if (ex.ok) {
+            extractedArchives.push({ archive: src, method: ex.method });
+            collectFontsFromDir(stageDir, 0, true);
+          } else {
+            archiveExtractErrors.push({ archive: src, error: ex.error });
+          }
+        } else if (/\.(ttf|otf|ttc)$/i.test(src)) {
+          const key = canonicalPath(src).toLowerCase();
+          if (!seenSourceFiles.has(key)) {
+            seenSourceFiles.add(key);
+            fontFileQueue.push({ full: src, entry: path.basename(src) });
+          }
+        }
+      } else if (st.isDirectory()) {
+        collectFontsFromDir(src, 0, false);
+      }
+    }
+
+    const seenDestPaths = new Set();
+    for (const { full, entry } of fontFileQueue) {
+      const destPath = path.join(destDir, entry);
+      const destKey = canonicalPath(destPath).toLowerCase();
+      if (seenDestPaths.has(destKey)) continue;
+      seenDestPaths.add(destKey);
+      if (isSameTargetPath(full, destPath)) {
+        skipped.push(destPath);
+      } else {
+        fs.copyFileSync(full, destPath);
+        installed.push(destPath);
+      }
+    }
+  } finally {
+    for (const d of tempExtractDirs) {
+      try {
+        fs.rmSync(d, { recursive: true, force: true });
+      } catch {}
+    }
+  }
+
+  const allTargetFontPaths = Array.from(new Set([...installed, ...skipped]));
+  const postEnv = await detectEnvironment('auto');
+  const postCheck = buildFontReport(postEnv);
+
+  const noFontsFound = allTargetFontPaths.length === 0;
+  const downloadFailed = Boolean(downloadSummary && !downloadSummary.ok);
+  const ok = !noFontsFound && !downloadFailed;
+  const failureReason = downloadFailed
+    ? 'font_download_failed'
+    : noFontsFound
+    ? 'no_font_files_found'
+    : null;
+
   console.log(
     JSON.stringify(
       {
-        ok: true,
+        ok,
+        ...(failureReason ? { reason: failureReason } : {}),
         platform: 'darwin',
         destDir,
         installedCount: installed.length,
         skippedCount: skipped.length,
+        ...(extractedArchives.length > 0 ? { extractedArchives } : {}),
+        ...(archiveExtractErrors.length > 0 ? { archiveExtractErrors } : {}),
+        ...(downloadSummary ? { downloadSummary } : {}),
         installed,
-        skipped
+        skipped,
+        postCheck
       },
       null,
       2
     )
   );
+  if (!ok) {
+    process.exitCode = 1;
+  }
 }
 
 async function runUninstall() {
@@ -1918,9 +2812,13 @@ switch (subcommand) {
     assertMacOS();
     await runRelaunch();
     break;
+  case 'download-fonts':
+    assertMacOS();
+    await runDownloadFontsCmd();
+    break;
   case 'install-fonts':
     assertMacOS();
-    runInstallFonts();
+    await runInstallFonts();
     break;
   case 'verify':
     assertMacOS();
@@ -1936,11 +2834,13 @@ switch (subcommand) {
     break;
   default:
     console.log(`Usage (macOS only):
-  node install.mjs install       [--channel auto|stable|insiders] [--preset native|morandi|absolutely|claude-desktop-purewhite|vintage-deep] [--dark-preset onyx|claude-warm] [--sync-user] [--with-launcher] [--no-service]
-  node install.mjs relaunch      [--channel auto|stable|insiders] [--force]
-  node install.mjs install-fonts --from <font-folder-path>
-  node install.mjs doctor        [--channel auto|stable|insiders]
-  node install.mjs verify        [--safe-mode] [--channel auto|stable|insiders]
+  node install.mjs install        [--channel auto|stable|insiders] [--preset native|morandi|absolutely|claude-desktop-purewhite|vintage-deep] [--dark-preset onyx|claude-warm] [--sync-user] [--with-launcher] [--no-service]
+  node install.mjs relaunch       [--channel auto|stable|insiders] [--force]
+  node install.mjs download-fonts [--dir <download-dir>] [--all] [--force] [--super-ttc]
+  node install.mjs install-fonts  --auto-download [--dir <download-dir>] [--all] [--force] [--super-ttc]
+  node install.mjs install-fonts  --from <font-folder-or-zip-path>
+  node install.mjs doctor         [--channel auto|stable|insiders]
+  node install.mjs verify         [--safe-mode] [--channel auto|stable|insiders]
   node install.mjs rollback
   node install.mjs uninstall
   node install.mjs build-manifest
