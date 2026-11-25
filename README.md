@@ -1,32 +1,32 @@
-# 船板的 Antigravity 主题、字体与汉化补丁 (v6.0.1)
+# 船板的 Antigravity 主题、字体与汉化补丁 (v6.0.3)
 
-[![Version](https://img.shields.io/badge/version-6.0.1-3D6470.svg)](https://github.com/henrychou0312/chuanban-antigravity-theme)
-[![Antigravity](https://img.shields.io/badge/Antigravity-2.34.0%2B-3F6E7A.svg)](https://github.com/henrychou0312/chuanban-antigravity-theme)
+[![Version](https://img.shields.io/badge/version-6.0.3-3D6470.svg)](https://github.com/henrychou0312/chuanban-antigravity-theme)
+[![Antigravity](https://img.shields.io/badge/Antigravity-2.35.1%2B-3F6E7A.svg)](https://github.com/henrychou0312/chuanban-antigravity-theme)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.0.0%20(22.13%2B%20Full)-339933.svg)](https://nodejs.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://github.com/henrychou0312/chuanban-antigravity-theme)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-面向 **macOS** 版 Google Antigravity（支持最新 **`2.34.0+`**）的轻量级非侵入式外观、排版、汉化与本地只读统计增强补丁（macOS 专属精简与安全加固版）。内置全新默认**莫兰迪古典矿物风格（`morandi`）**、五段式外观切换 **`[ A | ✳️ | MO | 📖 | 🌙 ]`**、**`[ EN | 中文 ]`** 一键零重刷语言双切、四层中西文混排与活字润墨、1,965 条零冲突汉化、极简上下文圆环遥测胶囊及「Token 统计」多维分析面板；不修改客户端 `.asar` 与系统签名，零第三方 npm 依赖，由 AI Agent 一键部署并通过 `user/` 层实现 `2.5s` 热重载定制。
+面向 **macOS** 版 Google Antigravity（支持最新 **`2.35.1+` / `2.35.0` / `2.34.0+`**）的轻量级非侵入式外观、排版、汉化与本地只读统计增强补丁（macOS 专属精简与安全加固版）。内置默认**莫兰迪古典矿物风格（`morandi`）**、五段式外观切换 **`[ A | ✳️ | MO | 📖 | 🌙 ]`**、独立**「跟随系统」日夜配对开关**、**`[ EN | 中文 ]`** 一键零重刷语言双切、四层中西文混排与活字润墨、**2,210 条**零冲突汉化（含 Swarm 1.5s 轮询零闪烁护盾）、`260ms` 悬浮意图上下文圆环胶囊（Remote SSH 无本地库自动隐身）、`@container` 响应式「Token 统计」面板及一键直链字体自动下载器；不修改客户端 `.asar` 与系统签名，零第三方 npm 依赖，由 AI Agent 一键部署并通过 `user/` 层实现 `2.5s` 热重载定制。
 
 > 供 AI Agent 读取的完整部署与改装技术契约见仓库根目录 **[`SKILL.md`](https://github.com/henrychou0312/chuanban-antigravity-theme/blob/main/SKILL.md)**，完整版本演进见 **[`CHANGELOG.md`](CHANGELOG.md)**。
 
 ---
 
-## ✨ 核心特性（v6.0.1 · macOS 专属安全加固版）
+## ✨ 核心特性（v6.0.3 · macOS 专属安全加固版）
 
-- **多套打磨风格自由切换**：内置温润耐看的**莫兰迪古典矿物风格**（默认）、深度打磨的**仿 Claude 书卷暖白风格（`Absolutely！`）**、护眼的**温润书卷夜间风格（`claude-warm`）**与深海冷碳深色模式（`onyx`），并支持在设置面板一键切回**官方原版风格（`A`）**（`<1ms` 硬件级旁路补丁配色与自定义字体）。
-- **母语级汉化与中英一键双切**：1,965 条零冲突词典覆盖主界面、15+ 设置子页、编排器模型档位与子 Agent / Swarm 副栏，严格隔离代码块、行内文件胶囊（`.inline-pill[data-uri]`）、Monaco 编辑器、终端与英文历史标题；外观面板提供独立 **`[ EN | 中文 ]`** 按钮，可随时一键零重刷退回纯英文原版界面（`EN` 态自动休眠文本观察器零开销）。
-- **字体美化与 macOS 活字润墨质感**：UI 西文直连官方 `Google Sans Flex` 可变字体引擎（`#ag-font-faces` 常驻隔离防切肤缺字）× `AgSarasaUI` 更纱黑体精密字重桥接；对话正文与 Markdown 采用 `Anthropic Serif` + `Sarasa Mono Slab SC` 衬线；代码与文件胶囊采用 `Anthropic Mono` 等宽；主输入框采用打字机板状粗衬线配单层 `2px` 同心合并边框，并在浅色纸面融入细腻的活字微润墨效果。
-- **极简美观的上下文圆环信息胶囊**：在输入框底栏内嵌低干扰状态胶囊（支持主窗口、多路平铺分屏、`/btw` 支线提问与子 Agent 侧栏独立计量），默认展示上下文占用圆环、生成速率与首字延迟，悬停展开精简 4 行矿石色中英双语遥测详情卡（如需旧版完整行内指标，可在 `user/config.json` 中配置 `"metricsMode": "full"`）。
-- **后台深度「Token 统计」多维分析面板**：基于 Node.js `>= 22.13` 原生 `node:sqlite` 只读增量引擎，在「系统设置 → 本地扩展 → Token 统计」提供 4 口径 KPI、26 周贡献热力图、近 14 日堆叠趋势、模型/配额池、工作场景及父子会话归因；内置 `.cache/token-analytics-index.json` 私有磁盘持久化索引（重开毫秒级响应，按住 `Shift` 点击「刷新」强制全量重算），Swarm 子帧及关闭 `modules.tokenAnalytics` 时自动剥离 ~100 KB 载荷。
-- **流畅不卡顿的渲染与守护优化**：全面清除 `body:has()` 与全局 `:nth-child():has()` 并为侧栏虚拟滚动容器补齐实色底，消除快速滚动闪烁；Browser 级 CDP 事件发现（`Target.setDiscoverTargets`）实现新建/唤醒窗口与 Swarm 子帧毫秒级注入并削减 83% 轮询；空闲时基于 `SingletonLock` 软链 PID 预检实现 0 次 `ps` 派生；`install.mjs` 自动将 Homebrew / `fnm` Node 还原为稳定软链写入 LaunchAgent；单图标纯净模式 + `M2` 冷启动无感接力与 `2.5s` 热重载。
-- **运行时完整性与最小权限安全加固**：守护进程在启动（含 `--keep-alive` 接管路径）及每次内核热重载前强制逐字节校验 `core/manifest.json` 的四件套 SHA-256 与文件大小（篡改即拒载）；移除 `user/custom.js` 动态 JS 执行（`new Function`）与外部 Python 脚本自动拉起；安装目录、配置、plist、`.cache/` 索引与私有日志统一收紧为属主独占权限（`0700` / `0600`），并支持 `node install.mjs install --no-service` 无常驻后台安装模式。
+- **多套打磨风格与独立「跟随系统」日夜配对开关**：内置温润耐看的**莫兰迪古典矿物风格**（默认）、深度打磨的**仿 Claude 书卷暖白风格（`Absolutely！`）**、护眼的**温润书卷夜间风格（`claude-warm`）**与深海冷碳深色模式（`onyx`），并支持在设置面板一键切回**官方原版风格（`A`）**（`<1ms` 硬件级旁路补丁配色与自定义字体）；新增独立**「跟随系统 / Follow System」**开关（复用客户端原生系统跟随状态、零配置膨胀），自动按 macOS 昼夜切换你的浅色/深色自定义预设配对（点击相反极性预设可即时预览并自动退出跟随）。
+- **母语级汉化与 Swarm 零闪烁护盾**：**2,210 条**零冲突词典全面适配 Antigravity `2.35.1`，覆盖主界面、15+ 设置子页、步骤计划芯片、插件权限弹窗、编排器模型档位与子 Agent / Swarm 蜂群工作台；针对 Swarm 副栏每 `1.5s` 重绘挂载实例级零闪烁预翻译护盾（切 `EN` 自动卸载还原），严格隔离代码块、行内文件胶囊、用户评论/自动化指令、Monaco 编辑器与终端；外观面板提供独立 **`[ EN | 中文 ]`** 按钮一键零重刷切换（`EN` 态自动休眠观察器零开销）。
+- **字体美化与一键直链自动安装**：UI 西文直连官方 `Google Sans Flex` 可变字体引擎（`#ag-font-faces` 常驻隔离防切肤缺字）× `AgSarasaUI` 更纱黑体精密字重桥接；对话正文与 Markdown 采用 `Anthropic Serif` + `Sarasa Mono Slab SC` 衬线；代码与文件胶囊采用 `Anthropic Mono` 等宽；主输入框采用打字机板状粗衬线配单层 `2px` 同心合并边框。内置 `install-fonts --auto-download` 自动直链下载与 `.zip` 自动解压（默认拉取 `170 MB` 精简拆分 SC TTF，免去手动下载 `791 MB` 大包）。
+- **防误触上下文圆环信息胶囊与 Remote SSH 适配**：在输入框底栏内嵌低干扰状态胶囊（支持主窗口、多路平铺分屏、`/btw` 支线提问与子 Agent 侧栏独立计量），引入 `260ms` 悬停意图检测与 `120ms` 卡片宽限期消除光标滑过误弹；区分本地库与 Remote SSH 远端会话（`dbFound: false` 时自动隐藏，不再常驻 `采样中…`）；如需旧版完整行内指标，可在 `user/config.json` 中配置 `"metricsMode": "full"`。
+- **后台深度「Token 统计」多维分析面板**：基于 Node.js `>= 22.13` 原生 `node:sqlite` 只读增量引擎，在「系统设置 → 本地扩展 → Token 统计」提供 4 口径 KPI、26 周贡献热力图、近 14 日堆叠趋势、55 模型映射与 `Claude` 共享配额池、工作场景及 Swarm `@worker` 真实协作者归因；升级纯 CSS `@container` `4:3` 响应式等高布局、`subgrid` 对齐、常驻筛选槽位与 `ResizeObserver` 渐隐溢出同步；内置 `.cache/token-analytics-index.json` 私有磁盘持久化索引（`TA_CACHE_SCHEMA_REV = 5`，按住 `Shift` 点击「刷新」强制全量重算）。
+- **流畅不卡顿的渲染与守护优化**：全面清除 `body:has()` 与全局 `:nth-child():has()` 并为侧栏虚拟滚动容器补齐实色底；Browser 级 CDP 事件发现（`Target.setDiscoverTargets`）实现毫秒级注入并削减 83% 轮询；空闲时基于 `SingletonLock` 软链 PID 预检实现 0 次 `ps` 派生；`relaunch` 与 `M2` 冷启动接力自动保留原进程 `--flag` 与代理参数/环境变量（凭据日志脱敏）；`doctor` 新增 `sourceSync` 源码/安装目录 SHA-256 同步诊断；自动将 Homebrew / `fnm` Node 还原为稳定软链写入 LaunchAgent。
+- **运行时完整性与最小权限安全加固**：守护进程在启动（含 `--keep-alive` 接管路径）及每次内核热重载前强制逐字节校验 `core/manifest.json` 的四件套 SHA-256 与文件大小（篡改即拒载）；移除 `user/custom.js` 动态 JS 执行（`new Function`）与外部 Python 脚本自动拉起；安装目录、配置、plist、`.cache/` 索引、字体缓存/解压暂存目录（忽略 zip 内符号链接 + 二进制魔数防 HTML 误判）与私有日志统一收紧为属主独占权限（`0700` / `0600`），并支持 `node install.mjs install --no-service` 无常驻后台安装模式。
 
 ---
 
 ## 🎨 配色与主题体系
 
-在「系统设置 → 外观界面」可直接通过五段式胶囊 **`[ A | ✳️ | MO | 📖 | 🌙 ]`** 切换全局风格，并可通过独立 **`[ EN | 中文 ]`** 按钮一键切换界面语言：
+在「系统设置 → 外观界面」可直接通过五段式胶囊 **`[ A | ✳️ | MO | 📖 | 🌙 ]`** 切换全局风格，并可开启独立的 **「跟随系统」** 开关自动按系统昼夜切换你偏好的浅色/深色预设配对（点击相反极性预设可即时预览并自动退出跟随），以及通过独立 **`[ EN | 中文 ]`** 按钮一键切换界面语言：
 
 | 按钮 | 预设名称 | 风格定位 |
 | :---: | :--- | :--- |
@@ -57,7 +57,7 @@
 ## 🚀 安装、升级与日常定制
 
 ### 一、新用户首次安装
-1. **环境准备**：仅支持 **macOS**，需安装 **Node.js `>= 22.0.0`**（推荐 **`>= 22.13.0`** 以启用上下文信息胶囊与「Token 统计」面板），并从下方 [**Google Drive 资源包**](https://drive.google.com/drive/folders/1NX92SgVUqtSjWg6bt6sIJXy-cn7J_boC) 下载 4 个必备字体文件：`AnthropicSerif-Regular.ttf`、`AnthropicSerif-Bold.ttf`、`AnthropicMono-Regular.ttf`、`Sarasa-SuperTTC.ttc`（若 `Sarasa-SuperTTC.ttc` 遇网盘限流，可直接运行 `brew install --cask font-sarasa-gothic`）。
+1. **环境准备**：仅支持 **macOS**，需安装 **Node.js `>= 22.0.0`**（推荐 **`>= 22.13.0`** 以启用上下文信息胶囊与「Token 统计」面板）。必备字体支持脚本**一键自动直链下载并解压安装**至 `~/Library/Fonts`；仅当本机终端网络无法直连 Google Drive 时，再从下方 [**Google Drive 资源包**](https://drive.google.com/drive/folders/1NX92SgVUqtSjWg6bt6sIJXy-cn7J_boC) 经浏览器手动下载（缺少更纱黑体亦可使用 `brew install --cask font-sarasa-gothic`）。
 
 #### 方式 A：AI Agent 一键安装（推荐）
 将以下引导词发给你的 AI Agent（Antigravity / Claude Code / Codex / Cursor 等）：
@@ -65,10 +65,13 @@
 > **💬 复制发给 Agent（新用户一键安装）**：  
 > 请帮我克隆 `https://github.com/henrychou0312/chuanban-antigravity-theme.git`（或读取我已下载解压的补丁目录），先完整阅读仓库内的 `SKILL.md`，再按以下顺序部署并处理边缘情况：  
 > 1. 若本机有 `nvm` / `fnm` / `volta`，优先切换至 `Node >= 22.13.0` 执行命令；运行 `node install.mjs doctor` 检查 `fonts.allRequiredInstalled`。  
-> 2. 若缺少字体（需 `Anthropic Serif`、`Anthropic Mono`、`Sarasa-SuperTTC.ttc`）：先在我刚下载的目录中查找并用 `node install.mjs install-fonts --from <字体目录>` 一键安装至 `~/Library/Fonts`（若缺 `Sarasa-SuperTTC.ttc` 且遇网盘限流，可直接执行 `brew install --cask font-sarasa-gothic`）。  
+> 2. 若缺少字体（需 `Anthropic Serif`、`Anthropic Mono` 与更纱黑体）：
+>    - 若我本地已下载好字体目录或 `.zip`，直接执行 `node install.mjs install-fonts --from "<字体目录或.zip路径>"`（支持自动解压 `.zip` 并安装至 `~/Library/Fonts`）；
+>    - 若本地尚未下载，**直接执行 `node install.mjs install-fonts --auto-download`**，脚本会自动下载缺失的 `Anthropic Serif/Mono` 与 `170 MB` 精简拆分版更纱黑体 `.zip` 并完成安装；
+>    - 仅当终端网络/代理受限导致 `--auto-download` 失败时，才提示我用浏览器从 Google Drive 共享目录下载 `AnthropicSerif-Regular/Bold.ttf`、`AnthropicMono-Regular.ttf` 及 [`Windows-Sarasa-Split-SC-TTF-v1.0.43.zip`](https://drive.google.com/file/d/1iVVvZXtwUcDiHy42tJ25X6N-JlOf3l7A/view?usp=sharing)（或用 `brew install --cask font-sarasa-gothic` 安装更纱），下载后交由 `install-fonts --from` 安装。
 > 3. 运行 `node install.mjs install` 完成安装（默认启用 `"morandi"` 莫兰迪风格；macOS 单图标模式下 `doctor` 输出 `antigravity.launcherInstalled: false`、`install` 输出 `launcherStatus.mode: "single-icon-m2-relay"` 均属正常设计；若不希望注册 LaunchAgent 后台常驻服务，可改用 `node install.mjs install --no-service`）。  
 > 4. 检查输出中的 `cdpStatus`：若为 `"missing_opt_in_flag"`（Antigravity `2.33.0+` 尚未挂调试端口），**如果你当前正在 Antigravity 内部对话中运行，请勿执行 `--force` 强行重启自断会话**，只需把空闲时执行的命令 `node ~/.gemini/antigravity/theme-patch/install.mjs relaunch`（或提示我直接手动退出重开一次 Antigravity）发给我；如果你在外部独立终端运行且客户端空闲，请直接执行 `node install.mjs relaunch`。  
-> 5. 在端口就绪后运行 `node install.mjs verify`，确认 `"ok": true`、`"themeStyle": true`（`live.state.hasStyle: true`、`dictCount: 1965`）即完成验收。
+> 5. 在端口就绪后运行 `node install.mjs verify`，确认 `"ok": true`、`"themeStyle": true`（`live.state.hasStyle: true`、`dictCount: 2210`）且 `fonts.allRequiredInstalled: true` 即完成验收。
 
 #### 方式 B：手动终端安装（macOS）
 在 macOS 终端（Terminal / iTerm2）中按顺序执行：
@@ -82,9 +85,11 @@ cd chuanban-antigravity-theme
 node -v
 node install.mjs doctor
 
-# 3. 安装缺失字体至 ~/Library/Fonts（将路径替换为字体下载目录）
-node install.mjs install-fonts --from ~/Downloads/<字体目录>
-# 若仅缺 Sarasa-SuperTTC.ttc 且遇网盘限流，可直接通过 Homebrew 安装：
+# 3. 一键自动下载并安装缺失字体至 ~/Library/Fonts（默认拉取 170 MB 精简拆分更纱 SC .zip）
+node install.mjs install-fonts --auto-download
+# 若本地已有字体目录或 .zip 压缩包，也可直接指定路径安装：
+# node install.mjs install-fonts --from ~/Downloads/<字体目录或.zip路径>
+# 若仅缺更纱黑体且终端无法访问 Google Drive，也可通过 Homebrew 安装：
 # brew install --cask font-sarasa-gothic
 
 # 4. 安装内核与 LaunchAgent 常驻服务（默认 morandi，不覆盖已有 user/ 配置）
@@ -93,26 +98,36 @@ node install.mjs install
 # node install.mjs install --no-service
 
 # 5. 若上一步输出 cdpStatus 为 "missing_opt_in_flag"，在 Antigravity 空闲时补挂调试端口重启
-#    （或直接手动完全退出并重开一次 Antigravity，后台守护会自动接力）
+#    （自动保留原进程 --flag 与代理环境变量；或直接手动完全退出并重开一次 Antigravity）
 node ~/.gemini/antigravity/theme-patch/install.mjs relaunch
 
-# 6. 实机注入验收（确认 "ok": true、"themeStyle": true 及 live.state.hasStyle: true）
+# 6. 实机注入验收（确认 "ok": true、"themeStyle": true、dictCount: 2210 且 fonts.allRequiredInstalled: true）
 node ~/.gemini/antigravity/theme-patch/install.mjs verify
 ```
 
 > 如需临时卸载并即时还原原版界面，运行 `node ~/.gemini/antigravity/theme-patch/install.mjs uninstall`（保留 `~/.gemini/antigravity/theme-patch/user/` 配置并清理 `.cache/`）；如需退回上一版本内核，运行 `node ~/.gemini/antigravity/theme-patch/install.mjs rollback`。
 
-### 二、老用户升级至 v6.0.1
+### 二、老用户升级至 v6.0.3
 `node install.mjs install` 会自动备份旧版 `core/` 内核、将旧版默认浅色预设 `"high-contrast"` 平滑迁移至 `"morandi"`、刷新 LaunchAgent 常驻服务（并自动将 Homebrew/`fnm` Node 还原为稳定软链路径），同时完整保留 `~/.gemini/antigravity/theme-patch/user/` 中的个人自定义配置：
 
 > **💬 复制发给 Agent（老用户无缝升级）**：  
-> 请帮我拉取最新的 `https://github.com/henrychou0312/chuanban-antigravity-theme.git`（或读取最新解压目录），阅读其中的 `SKILL.md` 后直接运行 `node install.mjs install` 升级至 `v6.0.1` macOS 安全精简版（若我此前使用的是更早期的单文件版 `antigravity-font-daemon.mjs` 且有自定义字号/配色，请先帮我把自定义项迁移到 `~/.gemini/antigravity/theme-patch/user/`）。若安装后 `cdpStatus` 为 `"missing_opt_in_flag"` 且你正在 Antigravity 内部会话中运行，请勿直接中断当前对话，告诉我空闲时运行 `node ~/.gemini/antigravity/theme-patch/install.mjs relaunch`（或手动重开一次客户端）即可；端口已就绪则直接运行 `node install.mjs verify` 确认 `"ok": true`、`"themeStyle": true` 与 `"dictCount": 1965` 完成验收。
+> 请帮我拉取最新的 `https://github.com/henrychou0312/chuanban-antigravity-theme.git`（或读取最新解压目录），阅读其中的 `SKILL.md` 后直接运行 `node install.mjs install` 升级至 `v6.0.3` macOS 安全精简版（若我此前使用的是更早期的单文件版 `antigravity-font-daemon.mjs` 且有自定义字号/配色，请先帮我把自定义项迁移到 `~/.gemini/antigravity/theme-patch/user/`）。若安装后 `cdpStatus` 为 `"missing_opt_in_flag"` 且你正在 Antigravity 内部会话中运行，请勿直接中断当前对话，告诉我空闲时运行 `node ~/.gemini/antigravity/theme-patch/install.mjs relaunch`（或手动重开一次客户端）即可；端口已就绪则直接运行 `node install.mjs verify` 确认 `"ok": true`、`"themeStyle": true`、`"dictCount": 2210` 且 `fonts.allRequiredInstalled: true` 完成验收。
 
 ### 三、日常定制与排障话术
-- **🎨 切换风格、语言或微调字号**：日常切换 5 套风格与中英文可直接在「系统设置 → 外观界面」点击对应按钮并自动落盘；如需修改扩展预设（如 `"claude-desktop-purewhite"` / `"vintage-deep"`）、切换旧版全量指标胶囊（`"metricsMode": "full"`）或调大 `"--ag-chat-font-size"`，可让 Agent 按 `SKILL.md` 修改 `~/.gemini/antigravity/theme-patch/user/config.json`。
+- **🎨 切换风格、跟随系统、语言或微调字号**：日常切换 5 套风格、开关「跟随系统」与切换中英文可直接在「系统设置 → 外观界面」点击对应控件并自动落盘；如需修改扩展预设（如 `"claude-desktop-purewhite"` / `"vintage-deep"`）、切换旧版全量指标胶囊（`"metricsMode": "full"`）或调大 `"--ag-chat-font-size"`，可让 Agent 按 `SKILL.md` 修改 `~/.gemini/antigravity/theme-patch/user/config.json`。
 - **🇨🇳 自定义词条覆盖**：在 `~/.gemini/antigravity/theme-patch/user/i18n.override.json` 中写入 `"英文原词": "自定义中文"`，保存后 `2.5s` 内热生效。
-- **🔍 故障定界、回滚与卸载**：可让 Agent 依次运行 `node install.mjs doctor` 与 `node install.mjs verify --safe-mode` 排查配置冲突；退回上一版本运行 `node install.mjs rollback`，彻底卸载还原运行 `node install.mjs uninstall`。
+- **🔍 故障定界、源码同步检查、回滚与卸载**：可让 Agent 依次运行 `node install.mjs doctor`（源码目录运行会自动校验 `coreIntegrity.sourceSync`）与 `node install.mjs verify --safe-mode` 排查配置冲突；退回上一版本运行 `node install.mjs rollback`，彻底卸载还原运行 `node install.mjs uninstall`。
   - *注：若客户端冷启动后偶发未显示 `Remote`（远程）入口，属官方 `language_server` 冷启动兜底包竞态（补丁已内置空输入态自动自愈；若启动瞬间正在输入触发了草稿保护，按 `Cmd + Shift + R` 刷新一次即可恢复）。*
+
+---
+
+## 🌱 社区衍生扩展（macOS 原生插件生态索引）
+
+本仓库定位为极简、安全的 **macOS 外观与汉化底座**。对于采用 Antigravity 官方原生 `~/.gemini/config/plugins/` 格式且与 `theme-patch/` 完全解耦的 macOS 社区插件，可按需独立加装：
+
+- **右侧栏双栏文献阅读、编辑与划词引用工作台 — [`guiyulou/guiyulou-antigravity-sidebar`](https://github.com/guiyulou/guiyulou-antigravity-sidebar)**（by [@guiyulou](https://github.com/guiyulou)）：
+  - 原生支持 macOS，可在对话右侧副栏浏览文件树、双栏对照阅读 PDF 与编辑 Markdown / LaTeX / 代码、划词插入 `[Ref n]` 引用并自动继承本补丁配色；部署位置为 `~/.gemini/config/plugins/guiyulou-antigravity-sidebar/`，与本主题补丁互不干扰（注意：**切勿在面板内直接预览来源不明的本地 HTML 文件**；主仓仅做生态索引，不对其后续代码变更与本地文件服务安全性承担担保）。
+- **关于依赖 `user/custom.js` 的第三方扩展**：上游 README 索引的配额条插件（如 `ghang/ghang-antigravity-local-ui`）依赖 `user/custom.js` 动态 JS 注入；因本安全加固版已主动移除 `user/custom.js` / `new Function` 执行通道，此类插件**不适用**于本仓库。
 
 ---
 
@@ -127,14 +142,16 @@ node ~/.gemini/antigravity/theme-patch/install.mjs verify
 
 | 入口 | 地址 | 说明 |
 | :--- | :--- | :--- |
-| **1. Google Drive 资源包（含字体）** | [**Google Drive 共享文件夹**](https://drive.google.com/drive/folders/1NX92SgVUqtSjWg6bt6sIJXy-cn7J_boC) | 含成品包与 4 个 macOS 必备字体文件：`AnthropicSerif-Regular/Bold.ttf`、`AnthropicMono-Regular.ttf`、`Sarasa-SuperTTC.ttc`（`v5.5.0+` UI 西文已直连官方 `Google Sans Flex`，无需 `AnthropicSans`；若 `Sarasa-SuperTTC.ttc` 遇网盘限流，可直接使用 `brew install --cask font-sarasa-gothic`）。 |
-| **2. GitHub 代码仓库** | [**henrychou0312/chuanban-antigravity-theme**](https://github.com/henrychou0312/chuanban-antigravity-theme) | macOS 专属安全精简版源码，包含预封装内核 `core/`、个人改装层 `user/`、生命周期 CLI `install.mjs`、[`SKILL.md`](https://github.com/henrychou0312/chuanban-antigravity-theme/blob/main/SKILL.md) 与 [`CHANGELOG.md`](CHANGELOG.md)（同步上游 [Anarcadia/chuanban-antigravity-theme-patch](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) `v6.0.1` macOS 适用更新并保留精简与安全加固）。 |
+| **1. Google Drive 资源包（含字体）** | [**Google Drive 共享文件夹**](https://drive.google.com/drive/folders/1NX92SgVUqtSjWg6bt6sIJXy-cn7J_boC) | 含必备字体：`AnthropicSerif-Regular/Bold.ttf`、`AnthropicMono-Regular.ttf`、精简拆分版更纱黑体 **[`Windows-Sarasa-Split-SC-TTF-v1.0.43.zip`](https://drive.google.com/file/d/1iVVvZXtwUcDiHy42tJ25X6N-JlOf3l7A/view?usp=sharing)**（170 MB，14 个 SC 字重 `.ttf`，macOS 通用且体积仅为 SuperTTC 的 1/4）及可选 `Sarasa-SuperTTC.ttc`（优先推荐使用 `node install.mjs install-fonts --auto-download` 一键自动下载安装；亦可使用 `brew install --cask font-sarasa-gothic`）。 |
+| **2. GitHub 代码仓库** | [**henrychou0312/chuanban-antigravity-theme**](https://github.com/henrychou0312/chuanban-antigravity-theme) | macOS 专属安全精简版源码，包含预封装内核 `core/`、个人改装层 `user/`、生命周期 CLI `install.mjs`、[`SKILL.md`](https://github.com/henrychou0312/chuanban-antigravity-theme/blob/main/SKILL.md) 与 [`CHANGELOG.md`](CHANGELOG.md)（同步上游 [Anarcadia/chuanban-antigravity-theme-patch](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) `v6.0.2 ~ v6.0.3` macOS 适用更新并保留精简与安全加固）。 |
 | **3. Notion 引导页（上游参考）** | [**chuanban-antigravity-theme-patch**](https://chuanban.notion.site/chuanban-antigravity-theme-patch-db7c5846f37546be9481cd791aed0554) | 上游原作者图文说明与安装引导镜像页（实际部署请以本仓库 `README.md` 与 `SKILL.md` 为准）。 |
 
 ---
 
 ## 🕒 近期版本演进（完整记录见 [`CHANGELOG.md`](CHANGELOG.md)）
 
+- **v6.0.3（2026-11-24 · macOS 安全精简版同步上游 `v6.0.2 ~ v6.0.3`）**
+  - 同步上游 `v6.0.2` 与 `v6.0.3` 全部 macOS 适用更新（忽略全部 Windows/Linux 专属变更，保留零 `custom.js` 与 Fail-Closed SHA-256 安全加固）：适配 Antigravity `2.35.1`（`2,210` 条零冲突汉化 + Swarm `1.5s` 轮询实例级零闪烁护盾）；外观面板新增独立**「跟随系统 / Follow System」**日夜配对开关及 Swarm 原版档双向极性同步；底栏指标胶囊新增 `260ms` 悬浮意图防误触与 Remote SSH 无本地库（`dbFound: false`）自动隐身修复（upstream #38）；升级「Token 统计」为 `@container` `4:3` 响应式等高布局、`subgrid` 对齐、55 模型映射（`TA_CACHE_SCHEMA_REV = 5`）、`Claude` 共享配额池与 Swarm `@worker` 归因；新增 `download-fonts` / `install-fonts --auto-download` 直链下载器与 `.zip` 自动解压（macOS `curl`/`fetch` + `unzip`/`ditto` + `0700` 暂存目录与符号链接隔离）、`doctor` `sourceSync` 同步检查及 macOS `relaunch`/`M2` 启动参数与代理保留。
 - **v6.0.1（2026-11-23 · macOS 安全精简版同步上游 `v6.0.1`）**
   - 同步上游 `v6.0.1` 实时指标胶囊自愈加固更新：新增订阅回执自愈重试与守护进程 `syncMetricsForSession` 单飞合并锁，彻底解决新建会话/跨窗切换偶发不显示指标问题；新增零流式开销输入框结构观察器，在 `Swarm` / Artifact 侧栏或权限卡触发 React 重建输入框时单帧自动补挂胶囊；新开会话首轮生成期间展示 `采样中…` / `Measuring…` 低干扰占位并在停笔瞬间（`100ms`）主动拉取 SQLite 指标，同时优先匹配 `conversation-view` 防止内层非 UUID 属性遮蔽。
 - **v6.0.0（2026-11-23 · macOS 安全精简版同步上游 `v6.0.0` 及后续修复 `29df839`）**
