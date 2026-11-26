@@ -4,6 +4,33 @@
 
 ---
 
+## [v6.0.4-macos-hardened] - 2026-11-25
+
+> **适用平台**：仅限 **macOS（`darwin`）**（Antigravity `2.35.2+` / `2.35.1` / `2.35.0` / `2.34.0+`，向下完全兼容 `2.33.x` / `2.32.x` / `2.31.x` / `2.30.0`）  
+> **变更定位**：同步上游 [`Anarcadia/chuanban-antigravity-theme-patch`](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) **`v6.0.4`** 及后续镜像/文档更新（`f18293d` ~ `73dc3e9`）全部 macOS 适用与跨平台更新（完整保留 macOS-only 精简架构与运行时安全加固；直接忽略 Windows / Linux 专属代码）
+
+### Added & Fixed（Antigravity `2.35.2` 适配 + 原生右键菜单跨隔离世界零 GC 汉化 + 仿 Claude 紧凑右键浮窗与安全浏览器/外部 IDE 桥接 + R2/GitHub Release/飞书多源字体镜像）
+- **适配 Antigravity `2.35.2` 运行期模型选择器解锁与词典扩充（`core/i18n.json` / `core/runtime.js`，`2,226` 条词典）**：
+  - 补齐 `2.35.2` 解锁任务执行期模型下拉框后新增的悬停提示词条（`Applies to messages sent after this turn`、`Applies to /btw and messages sent after this turn`）、右键菜单基础操作词条及 `Customizations views` 等 **16 条**新词条，零冲突基准词典扩充至 **`2,226` 条**；
+  - 升级 `RE_ARIA_MODEL` 动态解析逻辑，兼容句号/逗号拼接的运行态尾巴提示，保持模型名与思考档位精准翻译；并在 `DEFAULT_EXCLUDE_I18N` 中补充 `[data-testid^="conversation-group-"]` 与 `[data-testid^="conversation-project-"]` 防止用户自定义分组/项目名称被误翻。
+- **新增 Electron 原生右键菜单（`window:show-context-menu`）跨隔离世界三级零 GC 汉化（`core/daemon.mjs` / `core/runtime.js` / `core/i18n.json`，同步上游 #44）**：
+  - 针对左侧会话栏、Monaco 编辑器等走 `window.electronNative.showContextMenu` 原生系统菜单的场景，在 `Electron Isolated Context` 通过 `0.3ms` 符号缓存（`Symbol.for('ag.ipcR')`）→ `~5.9ms` 免 GC `DOMDebugger.getEventListeners` `[[Scopes]]` 闭包定位 → 带指数退避与端点熔断的 `Runtime.queryObjects` 兜底包裹 `IpcRenderer.prototype.invoke`；
+  - 采用零 DOM 变更的双同步 `CustomEvent`（`__ag_cm_req` / `__ag_cm_res`）握手 + `mergeLabelsOnly` 结构防篡改校验（严格校验 `id`/`type` 一致、仅合并 `label`）+ `CM_SCOPED_DICT` 菜单专属词表（保留 `user/i18n.override.json` 最高优先级并豁免用户分组/项目名），切换至 `EN` 或关闭汉化时通过 `Symbol.for('ag.unhookCm')` 干净卸载还原。
+- **新增仿 Claude 紧凑右键浮窗卡片、全场景汉化与 macOS 安全浏览器/外部 IDE 桥接（`core/runtime.js` / `core/theme.css` / `core/daemon.mjs`，同步上游 #46）**：
+  - 接管对话正文、代码块、网页外链、对话内图片（复制图片/另存图片）、本地文件胶囊与右侧文件栏、底部输入框的右键菜单（快捷键展示 macOS `⌘`，访达文案固定 `在访达中显示` / `Reveal in Finder`），完整适配 5 浅 + 3 深配色预设与中英双语实时切换；按住 **`Shift + 右键`** 可随时透传官方原生菜单，在 `user/config.json` 设置 `"modules": { "contextMenu": false }` 可完整剥离右键菜单 CSS/JS 载荷；
+  - 守护进程新增 macOS 实盘外部 IDE 探测（扫描 `/Applications/*.app` 与 `~/Applications/*.app` 中的 `VS Code`、`VS Code Insiders`、`Cursor`、`Windsurf`、`Zed`、`JetBrains` 全系及 `Sublime Text`，带 `5` 分钟 TTL 与 `.cache/external-editors.json` `0600` 属主独占原子缓存）；
+  - 新增无 Shell `execFile` 本地安全桥接（`__agOpenInBrowser` 严格白名单 `.html/.htm/.pdf/.svg` 并调用 `/usr/bin/open`；`__agOpenInEditor` 仅接受实盘校验通过的硬编码编辑器 ID 并清除 `ELECTRON_RUN_AS_NODE`；全链路校验 `file://` + `realpathSync` + 普通文件 + `500ms` 节流防抖）。
+- **升级字体自动下载为多镜像自动回退 + SHA-256 强校验，并补充飞书国内免代理兜底通道（`install.mjs` / `README.md` / `SKILL.md`）**：
+  - `FONT_DOWNLOAD_CATALOG` 为全部 5 项字体资源补齐 **SHA-256 摘要强校验**（`sha256FileChunked` 分块校验）与多源镜像顺序：**Cloudflare R2 (`https://img.chuanban.cc/fonts/chuanban-suite/`) → 上游 GitHub Release 镜像 (`fonts-sarasa-v1.0.43`) → Google Drive**；
+  - 新增 `shouldCircuitBreakMirror` 熔断器：遇到 Google Drive 配额超限 HTML 页、SHA-256 校验失败或 HTTP `401/403/404/410/429/451` 时立即熔断切换下一个镜像源；`download-fonts` 与 `install-fonts --auto-download` 新增 `--mirror <id>` 与 `--mirror-order <csv>` 参数；
+  - 在 `buildFontReport()`、下载失败回退提示及 `README.md` / `SKILL.md` 首屏内置中国大陆免代理免登录的 **[飞书配套字体国内高速下载页](https://www.feishu.cn/wiki/V2lbwB8ykiLLXrkzY41cXjQ1nXc)** 与 **[飞书主题图文整体落地页](https://www.feishu.cn/wiki/EQyqwJEqmi1LH3k11tzcmkMHnYd)** 处置 SOP，并同步注明上游平行发布的 Global 纯英文轻量仓库 [`Anarcadia/chuanban-antigravity-theme`](https://github.com/Anarcadia/chuanban-antigravity-theme)；macOS 可选启动器 plist 同步升级 `CFBundleShortVersionString: 6.0.4` / `CFBundleVersion: 604`。
+
+### Security & Ignored（安全加固保持与 Windows / Linux 专属项忽略）
+- **保留并扩展运行时安全加固**：继续保持 `core/manifest.json` 启动与热重载 Fail-Closed SHA-256 强校验、零 `user/custom.js` / `new Function` / `window.__AG_PATCH_CTX__` 暴露、零外部 `antigravity-zh-title-patch.py` 执行、`0700`/`0600` 属主独占权限收敛及 `--no-service` 无常驻模式；新增的 `.cache/external-editors.json` 缓存使用 `0700` 目录与 `writePrivateFileSync` (`0600`) 原子写盘，外部浏览器预览与 IDE 唤起强制使用 `/usr/bin/open` / 实盘二进制绝对路径的 `execFile`（零 Shell 注入风险），下载字体升级为二进制魔数 + SHA-256 双校验。
+- **忽略 Windows / Linux 专属代码**：已直接忽略上游 `v6.0.4` 中的全部 Windows / Linux 专属逻辑（`EXTERNAL_EDITOR_SPECS` 的 `winExeNames`/`winRelPaths`/`winCmdNames`/`winRegCheck`/`linuxBins`、`extractExeFromWinCmdWrapper`、`probeWin32ProtocolExeSync`/`Async` 注册表 `HKCR` 探测、`resolveWslCandidatePathsForPosixPath` 与 `wsl.localhost`/`wsl$` UNC/NTFS ADS 检查、`rundll32.exe` / `xdg-open` 分支、`runtime.js` 中的 `DETECTED_OS` / `IS_WIN` 快捷键与资源管理器文案分支、PowerShell `.NET HttpClient` 与 `detectWindowsSystemProxy`、以及 `user/custom.js` 的 `window.__AG_PATCH_CTX__.installedEditors` 挂载）。
+
+---
+
 ## [v6.0.3-macos-hardened] - 2026-11-24
 
 > **适用平台**：仅限 **macOS（`darwin`）**（Antigravity `2.35.1+` / `2.35.0` / `2.34.0+`，向下完全兼容 `2.33.x` / `2.32.x` / `2.31.x` / `2.30.0`）  
