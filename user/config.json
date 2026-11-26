@@ -10,6 +10,7 @@
     "metrics": true,
     "tokenAnalytics": true,
     "composerWaxSeal": true,
+    "contextMenu": true,
     "deadlockHealer": true,
     "coldBootHealer": true,
     "zoomShortcuts": true,
