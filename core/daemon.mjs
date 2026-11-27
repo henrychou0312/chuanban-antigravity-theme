@@ -2,9 +2,9 @@
 /**
  * chuanban-antigravity-theme-patch · macOS CDP Theme & Live Metrics Daemon (core/daemon.mjs)
  *
- * 架构特性（v6.0.4 · macOS 专属）：
+ * 架构特性（v6.0.6 · macOS 专属）：
  * 1. 动态 Node 分级：
- *    - Node >= 22.0：完整启用莫兰迪古典矿物默认视觉与外观五段式主题秒切（native / absolutely / morandi / claude-warm / onyx）及独立「跟随系统」开关、[ EN | 中文 ] 零重刷语言热切换、Google Sans Flex 原生西文引擎 × 更纱黑体 UI 精密字重桥接 + Anthropic Serif 正文、单层 2px 合并矿物输入框、2226条母语级汉化（含 Swarm 零闪烁护盾与 Electron 原生右键菜单跨隔离世界零 GC 汉化）、仿 Claude 紧凑右键浮窗卡片及无 Shell 安全浏览器/外部 IDE 桥接、宿主独占指纹门禁、死锁与冷启动兜底包自愈、Browser 级 CDP 事件发现及 2.33.0+ ~ 2.35.2+ CDP Opt-in 自动接力（M2 · SingletonLock 零子进程空闲短路与启动参数/代理保留）。
+ *    - Node >= 22.0：完整启用莫兰迪古典矿物默认视觉与外观五段式主题秒切（native / absolutely / morandi / claude-warm / onyx）及独立「跟随系统」开关、[ EN | 中文 ] 零重刷语言热切换、Google Sans Flex 原生西文引擎 × 更纱黑体 UI 精密字重桥接 + Anthropic Serif 正文、单层 2px 合并矿物输入框、2228条母语级汉化（含 Swarm 零闪烁护盾与 Electron 原生右键菜单跨隔离世界零 GC 汉化）、仿 Claude 紧凑右键浮窗卡片及无 Shell 安全浏览器/外部 IDE 桥接、宿主独占指纹门禁、死锁与冷启动兜底包自愈、Browser 级 CDP 事件发现及 2.33.0+ ~ 2.35.2+ CDP Opt-in 自动接力（M2 · SingletonLock 零子进程空闲短路与启动参数/代理保留）。
  *    - Node >= 22.13：动态 `await import('node:sqlite')` 解锁底部实时会话指标胶囊（O(1) 增量尾行解析）与「系统设置 → Token 统计」多维增量归因分析；低版本优雅降级绝不崩溃。
  * 2. 模块化与热重载：
  *    - 周期性检测 `user/config.json`、`user/custom.css`、`user/i18n.override.json` 的 mtime，
@@ -231,7 +231,7 @@ function resolveActiveChannelEndpoints(channelMode = 'auto', userCfg = {}) {
 // ============================================================================
 // 2. 动态构建注入载荷（支持 core/ + user/ 实时合并与热更新签名）
 // ============================================================================
-const BASE_VERSION = '20261126-v6.0.4';
+const BASE_VERSION = '20261127-v6.0.6';
 let cachedBundleSig = '';
 let cachedInjectScript = '';
 let cachedIframeInjectScript = '';
@@ -244,6 +244,7 @@ const tokenAnalyticsSummariesCache = new Map(); // summariesDbPath -> { sig, map
 let lastTokenAnalyticsAccessMs = 0;
 let tokenAnalyticsDiskLoaded = false;
 let tokenAnalyticsPersistTimer = null;
+let tokenAnalyticsFgAbortSeq = 0;
 let tokenAnalyticsLastJsonCache = { dataRef: null, jsonStr: '' };
 let inFlightTokenAnalyticsPromise = null;
 let inFlightTokenAnalyticsKey = '';
@@ -1186,6 +1187,13 @@ function rebuildBundleIfNeeded(opts = {}) {
     normalizedSelectors.excludeI18n +=
       ', #ag-token-nav-section, #ag-token-analytics-panel, #ag-ta-tooltip, [data-ag-token-ui]';
   }
+  if (
+    typeof normalizedSelectors.excludeI18n === 'string' &&
+    normalizedSelectors.excludeI18n.trim() &&
+    !normalizedSelectors.excludeI18n.includes('.code-line .line-content')
+  ) {
+    normalizedSelectors.excludeI18n += ', .view-lines, .code-line .line-content, .code-line .token';
+  }
 
   const DEFAULT_ALLOWED_ORIGINS = [
     'http://127.0.0.1',
@@ -1964,6 +1972,7 @@ function refreshLineageIndex(conversationsDir) {
       seenIds.add(uuid);
       const existingNode = dirState.nodes.get(uuid);
       if (existingNode?.hasMeta === true) continue;
+      if (existingNode && !dirState.noMetaPending.has(uuid)) continue;
       if (dirState.unindexedSet.has(uuid)) continue;
 
       const dbPath = path.join(conversationsDir, entries[i]);
@@ -2268,7 +2277,9 @@ function parseGenMetadataRow(r) {
   const slugRaw = chat.get(19);
   const slug = slugRaw instanceof Uint8Array ? textDecoder.decode(slugRaw) : '';
   const thinkUnreported =
-    !usage.has(9) && thinkTok === 0 && (apiProvider === 26 || /^claude-/i.test(slug));
+    !usage.has(9) &&
+    thinkTok === 0 &&
+    (apiProvider === 26 || apiProvider === 31 || apiProvider === 32 || /^(?:claude|gpt)-/i.test(slug));
   const ttft = (ttftMap.get(1) || 0) + (ttftMap.get(2) || 0) / 1e9;
   const stream = (streamMap.get(1) || 0) + (streamMap.get(2) || 0) / 1e9;
 
@@ -3736,8 +3747,17 @@ function scheduleTokenAnalyticsDiskPersist() {
 
 async function queryTokenAnalytics(
   endpoint,
-  { maxDays = 365, force = false, nowSec = Math.floor(Date.now() / 1000) } = {}
+  {
+    maxDays = 365,
+    force = false,
+    silent = false,
+    _fgSeq = tokenAnalyticsFgAbortSeq,
+    nowSec = Math.floor(Date.now() / 1000)
+  } = {}
 ) {
+  const isAborted = () => _fgSeq !== tokenAnalyticsFgAbortSeq;
+  let aborted = false;
+  void silent;
   lastTokenAnalyticsAccessMs = Date.now();
   const t0 = performance.now();
   await loadTokenAnalyticsDiskCacheIfNeeded(force);
@@ -3747,6 +3767,7 @@ async function queryTokenAnalytics(
 
   const summaries = new Map();
   const dbCandidateById = new Map(); // dbId -> { dbPath, sigInfo }
+  const allKnownDbIds = new Set();
 
   let dirExists = false;
   try {
@@ -3764,13 +3785,27 @@ async function queryTokenAnalytics(
 
     let entries = [];
     try {
-      entries = fs.readdirSync(primaryDir).filter((name) => name.endsWith('.db')).sort();
+      entries = fs
+        .readdirSync(primaryDir)
+        .filter((name) => name.endsWith('.db'))
+        .sort((a, b) => {
+          const tsA = summaries.get(a.slice(0, -3))?.lastModifiedSec || 0;
+          const tsB = summaries.get(b.slice(0, -3))?.lastModifiedSec || 0;
+          return tsB - tsA || a.localeCompare(b);
+        });
+      for (const fileName of entries) {
+        allKnownDbIds.add(fileName.slice(0, -3));
+      }
     } catch {
       entries = [];
     }
 
     let statIter = 0;
     for (const fileName of entries) {
+      if (isAborted()) {
+        aborted = true;
+        break;
+      }
       const dbPath = path.join(primaryDir, fileName);
       const dbId = path.basename(fileName, '.db');
       const sigInfo = getSqliteFileSig(dbPath);
@@ -3799,6 +3834,10 @@ async function queryTokenAnalytics(
     (a, b) => (b.sigInfo.mtimeMs || 0) - (a.sigInfo.mtimeMs || 0) || a.dbPath.localeCompare(b.dbPath)
   );
   for (const { dbPath, sigInfo } of dbEntries) {
+    if (isAborted()) {
+      aborted = true;
+      break;
+    }
     activePaths.add(dbPath);
     const cached = force !== 'hard' ? tokenAnalyticsDbCache.get(dbPath) : null;
     if (cached && cached.sig === sigInfo.sig) {
@@ -3829,10 +3868,12 @@ async function queryTokenAnalytics(
   }
 
   let prunedCount = 0;
-  for (const oldPath of tokenAnalyticsDbCache.keys()) {
-    if (!activePaths.has(oldPath)) {
-      tokenAnalyticsDbCache.delete(oldPath);
-      prunedCount += 1;
+  if (!aborted) {
+    for (const oldPath of tokenAnalyticsDbCache.keys()) {
+      if (!activePaths.has(oldPath)) {
+        tokenAnalyticsDbCache.delete(oldPath);
+        prunedCount += 1;
+      }
     }
   }
 
@@ -4046,9 +4087,11 @@ async function queryTokenAnalytics(
     defaultMetric: 'weighted',
     elapsedMs: Number((performance.now() - t0).toFixed(2)),
     stats: {
-      dbCount: dbEntries.length,
+      dbCount: Math.max(allKnownDbIds.size, parsedDbs.length, dbEntries.length),
       scannedDbs: parsedDbs.length,
       failedDbs: failedDbs.length,
+      deferredDbs: 0,
+      warmupPending: false,
       totalCalls,
       conversationCount: Object.keys(conversations).length,
       projectCount: activeProjects.length,
@@ -4067,13 +4110,18 @@ function runTokenAnalyticsQuery(endpoint, opts = {}) {
   if (!opts.force && inFlightTokenAnalyticsPromise && inFlightTokenAnalyticsKey === key) {
     return inFlightTokenAnalyticsPromise;
   }
+  if (opts.force && inFlightTokenAnalyticsPromise) {
+    tokenAnalyticsFgAbortSeq += 1;
+  }
+  const myFgSeq = tokenAnalyticsFgAbortSeq;
+  const prevFgPromise = inFlightTokenAnalyticsPromise;
   const run = (async () => {
-    if (inFlightTokenAnalyticsPromise) {
+    if (prevFgPromise) {
       try {
-        await inFlightTokenAnalyticsPromise;
+        await prevFgPromise;
       } catch {}
     }
-    return queryTokenAnalytics(endpoint, opts);
+    return queryTokenAnalytics(endpoint, { ...opts, _fgSeq: myFgSeq });
   })();
   inFlightTokenAnalyticsKey = key;
   inFlightTokenAnalyticsPromise = run;
@@ -4878,10 +4926,19 @@ function launchSafeFileInDetectedEditor(rawPayload) {
   return { ok: true, editorId, realPath, line };
 }
 
-const PRELOAD_CM_HOOK_REV = 2;
-const cmHookUnsupportedEndpoints = new Set(); // key: `${channel}:${port}` (resets automatically on host restart/upgrade)
+const PRELOAD_CM_HOOK_REV = 3;
+const CM_HOOK_CIRCUIT_BREAKER_TTL_MS = 10 * 60 * 1000;
+const cmHookUnsupportedEndpoints = new Map(); // key: `${channel}:${port}` -> { zeroHits, blockedUntil }
 
-// Runs inside Electron Isolated Context: unwraps ipcRenderer or owner along prototype chain, installs REV=2 CustomEvent wrapper + mergeLabelsOnly + clean unhook
+function isCmEndpointCircuitOpen(endpointKey) {
+  const rec = cmHookUnsupportedEndpoints.get(endpointKey);
+  if (!rec) return false;
+  if (rec.blockedUntil > 0 && Date.now() < rec.blockedUntil) return true;
+  if (rec.blockedUntil > 0) cmHookUnsupportedEndpoints.delete(endpointKey);
+  return false;
+}
+
+// Runs inside Electron Isolated Context: unwraps ipcRenderer or owner along prototype chain, installs REV=3 CustomEvent wrapper (with reqId nonce) + mergeLabelsOnly + clean unhook
 const PRELOAD_CM_INSTALLER_EXPR = `(function(cand) {
   const ipc = cand && typeof cand === 'object'
     ? (typeof cand.invoke === 'function' && typeof cand.send === 'function' && typeof cand.on === 'function'
@@ -4937,6 +4994,7 @@ const PRELOAD_CM_INSTALLER_EXPR = `(function(cand) {
     }
     return changed ? out : origArr;
   }
+  let cmReqSeq = 0;
   const wrapper = function(channel, ...args) {
     if (
       channel === 'window:show-context-menu' &&
@@ -4947,20 +5005,22 @@ const PRELOAD_CM_INSTALLER_EXPR = `(function(cand) {
     ) {
       const uiLang = document.documentElement.getAttribute('data-ag-lang');
       if (uiLang && uiLang !== 'en') {
-        let resStr = null;
+        const reqId = 'cm-' + Date.now() + '-' + (++cmReqSeq) + '-' + Math.random().toString(36).slice(2, 8);
+        let resItems = null;
         const onRes = (ev) => {
-          if (resStr === null && ev && typeof ev.detail === 'string') {
-            resStr = ev.detail;
-          }
+          if (resItems !== null || !ev || typeof ev.detail !== 'string') return;
+          try {
+            const parsedRes = JSON.parse(ev.detail);
+            if (parsedRes && parsedRes.reqId === reqId && Array.isArray(parsedRes.items)) {
+              resItems = parsedRes.items;
+            }
+          } catch (e0) {}
         };
         document.addEventListener('__ag_cm_res', onRes);
         try {
-          document.dispatchEvent(new CustomEvent('__ag_cm_req', { detail: JSON.stringify(args[0]) }));
-          if (resStr) {
-            const parsed = JSON.parse(resStr);
-            if (Array.isArray(parsed)) {
-              args[0] = mergeLabelsOnly(args[0], parsed);
-            }
+          document.dispatchEvent(new CustomEvent('__ag_cm_req', { detail: JSON.stringify({ reqId, items: args[0] }) }));
+          if (resItems) {
+            args[0] = mergeLabelsOnly(args[0], resItems);
           }
         } catch (e) {
         } finally {
@@ -5120,7 +5180,7 @@ function attachTarget(target, endpoint) {
           activeConfig.installedLocale === 'none' ||
           preloadIsolatedContextId === null ||
           ws.readyState !== WebSocket.OPEN ||
-          cmHookUnsupportedEndpoints.has(endpointKey)
+          isCmEndpointCircuitOpen(endpointKey)
         ) {
           return Promise.resolve(false);
         }
@@ -5132,14 +5192,14 @@ function attachTarget(target, endpoint) {
         }
         const ctxId = preloadIsolatedContextId;
         const attemptRec = cmHookAttemptsByCtx.get(ctxId) || { count: 0, nextAllowedAt: 0 };
-        if (attemptRec.count >= 3 || Date.now() < attemptRec.nextAllowedAt) {
+        if (Date.now() < attemptRec.nextAllowedAt) {
           return Promise.resolve(false);
         }
 
         preloadCmHookInFlight = (async () => {
           const objGroup = `ag-preload-cm-${ctxId}`;
           try {
-            // Tier 1 (0.3ms, 0 GC): Check existing REV=2 or upgrade in-place via cached Symbol.for('ag.ipcR')
+            // Tier 1 (0.3ms, 0 GC): Check existing REV or upgrade in-place via cached Symbol.for('ag.ipcR')
             const fastRes = await send('Runtime.evaluate', {
               contextId: ctxId,
               returnByValue: true,
@@ -5154,6 +5214,7 @@ function attachTarget(target, endpoint) {
             if (fastVal > 0) {
               preloadCmHookedContextId = ctxId;
               cmHookAttemptsByCtx.delete(ctxId);
+              cmHookUnsupportedEndpoints.delete(endpointKey);
               return true;
             }
             if (ws.readyState !== WebSocket.OPEN || preloadIsolatedContextId !== ctxId) {
@@ -5198,6 +5259,7 @@ function attachTarget(target, endpoint) {
                     if (Number(installRes?.result?.result?.value) > 0) {
                       preloadCmHookedContextId = ctxId;
                       cmHookAttemptsByCtx.delete(ctxId);
+                      cmHookUnsupportedEndpoints.delete(endpointKey);
                       return true;
                     }
                   }
@@ -5209,7 +5271,7 @@ function attachTarget(target, endpoint) {
               return false;
             }
 
-            // Tier 3 (Remote SSH window fallback): Runtime.queryObjects with exponential backoff & endpoint circuit-breaker
+            // Tier 3 (Remote SSH window fallback): Runtime.queryObjects with exponential backoff & TTL circuit-breaker
             const protoRes = await send('Runtime.evaluate', {
               contextId: ctxId,
               objectGroup: objGroup,
@@ -5258,11 +5320,20 @@ function attachTarget(target, endpoint) {
             if (count > 0) {
               preloadCmHookedContextId = ctxId;
               cmHookAttemptsByCtx.delete(ctxId);
+              cmHookUnsupportedEndpoints.delete(endpointKey);
               return true;
             }
-            // queryObjects succeeded cleanly but found 0 IpcRenderer candidates => host Electron internals changed; trip endpoint circuit-breaker
-            cmHookUnsupportedEndpoints.add(endpointKey);
-            console.warn(`[Daemon] Preload IpcRenderer not found on ${endpointKey}; native context menu i18n circuit-breaker tripped for this session.`);
+            const idx = Math.min(attemptRec.count, 2);
+            attemptRec.count += 1;
+            attemptRec.nextAllowedAt = Date.now() + [5000, 30000, 300000][idx];
+            cmHookAttemptsByCtx.set(ctxId, attemptRec);
+            const epRec = cmHookUnsupportedEndpoints.get(endpointKey) || { zeroHits: 0, blockedUntil: 0 };
+            epRec.zeroHits += 1;
+            if (epRec.zeroHits >= 2) {
+              epRec.blockedUntil = Date.now() + CM_HOOK_CIRCUIT_BREAKER_TTL_MS;
+              console.warn(`[Daemon] Preload IpcRenderer not found on ${endpointKey} (${epRec.zeroHits}x); native context menu i18n paused for 10m.`);
+            }
+            cmHookUnsupportedEndpoints.set(endpointKey, epRec);
             return false;
           } catch {
             const idx = Math.min(attemptRec.count, 2);
@@ -6104,10 +6175,11 @@ function attachTarget(target, endpoint) {
             const reqId = String(req?.reqId || '');
             const maxDays = Number(req?.maxDays) > 0 ? Number(req.maxDays) : 365;
             const force = req?.force === 'hard' ? 'hard' : Boolean(req?.force);
+            const silent = Boolean(req?.silent);
             void (async () => {
               let payloadJson = '';
               try {
-                const data = await runTokenAnalyticsQuery(endpoint, { maxDays, force });
+                const data = await runTokenAnalyticsQuery(endpoint, { maxDays, force, silent });
                 if (tokenAnalyticsLastJsonCache.dataRef === data && tokenAnalyticsLastJsonCache.jsonStr) {
                   payloadJson = tokenAnalyticsLastJsonCache.jsonStr;
                 } else {
