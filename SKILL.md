@@ -1,14 +1,14 @@
 ---
 name: chuanban-antigravity-theme-patch
-description: 船板的 Antigravity 2.0 macOS 专属主题、字体与汉化补丁（v6.0.4 · 适配 macOS 版 Antigravity 2.35.2+ / 2.35.1 / 2.35.0 / 2.34.0+ 单图标 M2 启动接力与启动参数/代理保留 + Browser 级 CDP 事件发现与 SingletonLock 零子进程空闲短路 + Cloudflare R2/GitHub Release/Google Drive 多源熔断字体自动下载（SHA-256 校验）与飞书中国大陆免代理兜底 + 默认「莫兰迪古典矿物 (morandi)」冷暖互补配色体系与烟岚石青单层 2px 合并输入框 + 外观面板五段式主题秒切 `[ A 原版配色 | ✳️ Absolutely！ | MO 莫兰迪色 | 📖 暖纸深色 | 🌙 深色 ]` 与独立「跟随系统」日夜配对开关 + 外观 `[ EN | 中文 ]` 一键零重刷语言切换 + UI 西文 Google Sans Flex 可变字体引擎 × 中文更纱黑体映射 + 对话正文 Anthropic Serif 衬线 + 2,226 条零冲突词典 + Electron 原生右键菜单跨隔离世界零 GC 汉化 + 仿 Claude 紧凑右键浮窗卡片及安全浏览器/外部 IDE 桥接 + Swarm 1.5s 轮询零闪烁翻译护盾 + 分屏/支线提问(/btw)/子Agent侧栏独立上下文圆环实时指标胶囊（260ms 悬浮意图 + Remote SSH 自动隐身）+ 系统设置「本地扩展 → Token 统计」`@container` 响应式磁盘持久化毫秒级分析面板）。采用「core/ 只读内核（运行时 SHA-256 强校验）+ user/ 永不覆盖改装层 + install.mjs CLI」，支持 Agent 一键部署、2.5 秒热重载定制与 --safe-mode 沙箱排障。当用户提到“安装船板 Antigravity 主题”、“升级/修复 Antigravity 汉化与字体”、“定制 Antigravity 界面样式或汉化词条”时触发。
+description: 船板的 Antigravity 2.0 macOS 专属主题、字体与汉化补丁（v6.0.6 · 适配 macOS 版 Antigravity 2.35.2+ / 2.35.1 / 2.35.0 / 2.34.0+ 单图标 M2 启动接力与启动参数/代理保留 + Browser 级 CDP 事件发现与 SingletonLock 零子进程空闲短路 + Cloudflare R2/GitHub Release/Google Drive 多源熔断字体自动下载（SHA-256 校验）与飞书中国大陆免代理兜底 + 默认「莫兰迪古典矿物 (morandi)」冷暖互补配色体系与烟岚石青单层 2px 合并输入框 + 外观面板五段式主题秒切 `[ A 原版配色 | ✳️ Absolutely！ | MO 莫兰迪色 | 📖 暖纸深色 | 🌙 深色 ]` 与独立「跟随系统」日夜配对开关 + 外观 `[ EN | 中文 ]` 一键零重刷语言切换 + UI 西文 Google Sans Flex 可变字体引擎 × 中文更纱黑体映射 + 对话正文 Anthropic Serif 衬线 + 2,228 条零冲突词典与 Diff 代码行防误翻隔离 + Electron 原生右键菜单 REV=3 跨隔离世界零 GC 汉化 + 仿 Claude 紧凑右键浮窗卡片及安全浏览器/外部 IDE 桥接 + Swarm 1.5s 轮询零闪烁翻译护盾 + 分屏/支线提问(/btw)/子Agent侧栏独立上下文圆环实时指标胶囊（260ms 悬浮意图 + Remote SSH 自动隐身）+ 系统设置「本地扩展 → Token 统计」全双语 `@container` 响应式磁盘持久化毫秒级分析面板）。采用「core/ 只读内核（运行时 SHA-256 强校验）+ user/ 永不覆盖改装层 + install.mjs CLI」，支持 Agent 一键部署、2.5 秒热重载定制与 --safe-mode 沙箱排障。当用户提到“安装船板 Antigravity 主题”、“升级/修复 Antigravity 汉化与字体”、“定制 Antigravity 界面样式或汉化词条”时触发。
 ---
 
-# 船板的 Antigravity 主题、字体与汉化补丁（v6.0.4 · macOS 专属 · AI Agent 部署与改装契约）
+# 船板的 Antigravity 主题、字体与汉化补丁（v6.0.6 · macOS 专属 · AI Agent 部署与改装契约）
 
 > **核心摘要（致执行端 AI Agent）**：
 > - **功能边界**：仅支持 **macOS（`darwin`）**，纯运行时本地回环 CDP 注入（不改 `.asar`、不破系统签名、零第三方 npm 依赖），适配 Google Antigravity **`2.35.2+` / `2.35.1` / `2.35.0` / `2.34.0+`**（向下兼容 `2.33.x` / `2.32.x` / `2.31.x` / `2.30.0`）：
->   - **五段式主题、跟随系统开关与双语热切换**：默认启用 **`"morandi"`（莫兰迪古典矿物：暖宣纸底 `#F4F1EA` × 亚麻侧栏 `#E8E3D9` × 烟岚石青单层 `2px` 合并输入框与按钮）**；在「系统设置 → 外观界面」嵌入 **`[ A 原版配色 | ✳️ Absolutely！ | MO 莫兰迪色 | 📖 暖纸深色 | 🌙 深色 ]`** 五段式切换（`A` 原版配色通过 `#ag-font-faces` / `#ag-custom-fonts` / `#ag-ui-widgets` 三段样式拆分实现 `<1ms` 零开销回退官方配色与原版字体，`📖` 暖纸深色采用经典 Claude 暖炭 `#242320` / `#D97757` 配色）、独立**「跟随系统 / Follow System」**日夜配对开关（复用客户端原生系统跟随、零配置膨胀，保留浅色 `preset` 与深色 `darkPreset` 配对，点击相反极性预设即时预览并自动退出跟随）及独立 **`[ EN | 中文 ]`** 二元语言切换（`EN` 态观察器零开销休眠并自动卸载原生右键菜单钩子），自动以 `0600` 原子落盘至 `user/config.json` 并实时同步启动幕布与 `Swarm` 协作子帧（含 `native` 档跟随系统双向极性同步）；
->   - **四层排版、全区域右键菜单与双层遥测**：UI 西文直连官方 `Google Sans Flex` 可变字体（`#ag-font-faces` 常驻隔离防切肤缺字）× 中文 `AgSarasaUI` 更纱黑体字重桥接；对话正文采用 `Anthropic Serif` + `Sarasa Mono Slab SC` 衬线与 macOS 浅色全域活字润墨；代码与行内文件胶囊（`.inline-pill[data-uri]`）采用 `Anthropic Mono` 等宽；输入框采用打字机粗衬线配单层 `2px` 合并边框；内置 **`2,226` 条**零冲突汉化（含 `2.35.2` 运行期模型尾注解析、Electron 原生右键菜单跨隔离世界零 GC 汉化、Swarm 面板 `1.5s` 轮询实例级零闪烁预翻译护盾）、**仿 Claude 紧凑右键浮窗卡片**与 macOS 无 Shell 安全浏览器/外部 IDE 桥接（`Shift + 右键` 透传原生菜单，`modules.contextMenu: false` 动态裁剪载荷）、多路分屏/`/btw`/子 Agent 侧栏独立上下文圆环实时指标胶囊（`260ms` 悬浮意图防误触 + Remote SSH 无本地库自动隐身，支持 `"metricsMode": "full"` 切回全量行内指标）与「系统设置 → 本地扩展 → Token 统计」增量 SQLite 多维分析面板（`@container` `4:3` 响应式布局、`subgrid` 对齐、`55` 模型映射、`TA_CACHE_SCHEMA_REV = 5` 与 Swarm `@worker` 归因）。
+>   - **五段式主题、跟随系统开关与双语热切换**：默认启用 **`"morandi"`（莫兰迪古典矿物：暖宣纸底 `#F4F1EA` × 亚麻侧栏 `#E8E3D9` × 烟岚石青单层 `2px` 合并输入框与按钮）**；在「系统设置 → 外观界面」嵌入 **`[ A 原版配色 | ✳️ Absolutely！ | MO 莫兰迪色 | 📖 暖纸深色 | 🌙 深色 ]`** 五段式切换（`A` 原版配色通过 `#ag-font-faces` / `#ag-custom-fonts` / `#ag-ui-widgets` 三段样式拆分实现 `<1ms` 零开销回退官方配色与原版字体，深色态切回自动还原原版浅色，`📖` 暖纸深色采用经典 Claude 暖炭 `#242320` / `#D97757` 配色）、独立**「跟随系统 / Follow System」**日夜配对开关（复用客户端原生系统跟随、零配置膨胀，保留浅色 `preset` 与深色 `darkPreset` 配对，点击相反极性预设即时预览并自动退出跟随）及独立 **`[ EN | 中文 ]`** 二元语言切换（`EN` 态观察器零开销休眠并自动卸载原生右键菜单钩子），自动以 `0600` 原子落盘至 `user/config.json` 并实时同步启动幕布与 `Swarm` 协作子帧（含 `native` 档跟随系统双向极性同步）；
+>   - **四层排版、全区域右键菜单与双层遥测**：UI 西文直连官方 `Google Sans Flex` 可变字体（`#ag-font-faces` 常驻隔离防切肤缺字）× 中文 `AgSarasaUI` 更纱黑体字重桥接；对话正文采用 `Anthropic Serif` + `Sarasa Mono Slab SC` 衬线与 macOS 浅色全域活字润墨；代码与行内文件胶囊（`.inline-pill[data-uri]`）采用 `Anthropic Mono` 等宽；输入框采用打字机粗衬线配单层 `2px` 合并边框；内置 **`2,228` 条**零冲突汉化（含 `2.35.2` 运行期模型 `Leaving Soon` / `Leaving on <Date>` 解析、Diff 虚拟代码行 `.code-line`/`.view-lines` 精准隔离与热恢复、Electron 原生右键菜单 `REV=3` 跨隔离世界零 GC 汉化、Swarm 面板 `1.5s` 轮询实例级零闪烁预翻译护盾）、**仿 Claude 紧凑右键浮窗卡片**与 macOS 无 Shell 安全浏览器/外部 IDE 桥接（打通 `user/i18n.override.json` 覆盖、`Shift + 右键` 透传原生菜单，`modules.contextMenu: false` 动态裁剪载荷）、多路分屏/`/btw`/子 Agent 侧栏独立上下文圆环实时指标胶囊（`260ms` 悬浮意图防误触 + Remote SSH 无本地库自动隐身，支持 `"metricsMode": "full"` 切回全量行内指标）与「系统设置 → 本地扩展 → Token 统计」全双语增量 SQLite 多维分析面板（`@container` `4:3` 响应式布局、`subgrid` 对齐、`55` 模型映射与 `Claude & GPT` 配额池、`TA_CACHE_SCHEMA_REV = 5` 与 Swarm `@worker` 归因）。
 > - **真注入肉眼验真三特征（防 `2.33.0+` 原生 `Google Sans Flex` 视觉假象）**：
 >   1. 对话正文与 Markdown 为 `Anthropic Serif` 衬线体（`A` 原版配色除外）；
 >   2. 主输入框为单层 `2px` 合并粗线（`MO` 下为烟岚石青 `#A3B5BA → #3D6470`，`Absolutely！` 下为暖橙火漆 `#DFAC98 → #A64229`）；
@@ -33,7 +33,7 @@ description: 船板的 Antigravity 2.0 macOS 专属主题、字体与汉化补�
      - **飞书端主题整体落地页（图文介绍与指引）**：<https://www.feishu.cn/wiki/EQyqwJEqmi1LH3k11tzcmkMHnYd>
    - **首选一键自动下载与安装**：`install.mjs` 内置 macOS 多镜像自动回退下载器（优先走 **Cloudflare R2** `https://img.chuanban.cc/fonts/chuanban-suite/`，更纱黑体自动按 **Cloudflare R2 → 上游 GitHub Release (`fonts-sarasa-v1.0.43`) → Google Drive** 顺序切换；遇到 Google Drive 配额超限 HTML 页立即熔断切源并强制校验二进制魔数与 **SHA-256**，采用 `curl` → Node `22+` `fetch` 回退与 `unzip`/`ditto` 自动解压且跳过 zip 符号链接），直接运行 **`node install.mjs install-fonts --auto-download`**（如需指定优先源可加 `--mirror cloudflare-r2|github-release|google-drive` 或 `--mirror-order <csv>`；如需完整 `791 MB` `Sarasa-SuperTTC.ttc` 可追加 `--super-ttc`）即可自动补齐全部缺失字体。
    - **海外及其他手动下载镜像**：若需从海外镜像浏览器下载，可从 **[Cloudflare R2 直链 (`Windows-Sarasa-Split-SC-TTF-v1.0.43.zip`)](https://img.chuanban.cc/fonts/chuanban-suite/Windows-Sarasa-Split-SC-TTF-v1.0.43.zip)**、**[上游 GitHub Release 镜像 (`fonts-sarasa-v1.0.43`)](https://github.com/Anarcadia/chuanban-antigravity-theme-patch/releases/tag/fonts-sarasa-v1.0.43)** 或 [Google Drive 共享目录](https://drive.google.com/drive/folders/1NX92SgVUqtSjWg6bt6sIJXy-cn7J_boC) 获取；无需手动解压即可运行 `node install.mjs install-fonts --from "<下载目录或.zip路径>"`（缺少更纱黑体亦可执行 `brew install --cask font-sarasa-gothic`）。
-2. **GitHub 代码仓库**：<https://github.com/henrychou0312/chuanban-antigravity-theme>（基于上游 <https://github.com/Anarcadia/chuanban-antigravity-theme-patch> 精简为 macOS 专属并完成运行时安全加固，同步至 `v6.0.4`）
+2. **GitHub 代码仓库**：<https://github.com/henrychou0312/chuanban-antigravity-theme>（基于上游 <https://github.com/Anarcadia/chuanban-antigravity-theme-patch> 精简为 macOS 专属并完成运行时安全加固，同步至 `v6.0.6`）
 3. **飞书主题整体落地页（国内免代理）**：<https://www.feishu.cn/wiki/EQyqwJEqmi1LH3k11tzcmkMHnYd>（嵌套字体下载子页：<https://www.feishu.cn/wiki/V2lbwB8ykiLLXrkzY41cXjQ1nXc>）
 4. **Notion 引导页（上游参考）**：<https://chuanban.notion.site/chuanban-antigravity-theme-patch-db7c5846f37546be9481cd791aed0554>
 
@@ -49,7 +49,7 @@ description: 船板的 Antigravity 2.0 macOS 专属主题、字体与汉化补�
 
 > **多版本环境提示**：若用户电脑装有 `nvm` / `fnm` / `volta` / Homebrew Node，请优先选用 **`Node.js >= 22.13.0`** 执行 `node install.mjs install`（安装器通过 `resolveStableNodeExecPath()` 自动将 Homebrew `Cellar` 版本路径与 `fnm` 别名还原为稳定持久软链写入 LaunchAgent，避免 `brew upgrade node && brew cleanup` 后守护失效）。
 
-| 运行时版本 | 五段式主题 + 跟随系统 / 单线矿物框 / 四层字体 | 2,226 条汉化 + 原生/浮窗右键菜单 + `[ EN \| 中文 ]` 零重刷切换 | 死锁/冷启动自愈 + BrowserWatcher + M2 端口与参数接力 | SQLite 实时指标胶囊 & 「Token 统计」面板 (`node:sqlite`) |
+| 运行时版本 | 五段式主题 + 跟随系统 / 单线矿物框 / 四层字体 | 2,228 条汉化 + 原生/浮窗右键菜单 + `[ EN \| 中文 ]` 零重刷切换 | 死锁/冷启动自愈 + BrowserWatcher + M2 端口与参数接力 | SQLite 实时指标胶囊 & 「Token 统计」面板 (`node:sqlite`) |
 | :--- | :---: | :---: | :---: | :---: |
 | **Node.js `>= 22.13.0`**（推荐） | ✅ 全量启用 | ✅ 全量启用 | ✅ 全量启用 | ✅ **自动启用**（圆环遥测胶囊 + 磁盘索引多维归因） |
 | **Node.js `22.0.0 ~ 22.12.x`** | ✅ 全量启用 | ✅ 全量启用 | ✅ 全量启用 | ⚠️ 自动优雅关闭（后台零报错） |
@@ -69,11 +69,11 @@ chuanban-antigravity-theme/
 ├── README.md                   # 面向用户的项目说明与快速上手指南
 ├── CHANGELOG.md                # 版本演进记录
 ├── core/                       # 【只读内核】随版本升级原子替换，Agent 严禁直接修改
-│   ├── manifest.json           # 版本号（6.0.4）、平台声明（darwin）、资源地址与 core/* 四件套 SHA-256 校验清单
-│   ├── daemon.mjs              # macOS Node CDP 守护进程（运行时 core/manifest.json SHA-256 强校验、宿主独占指纹门禁、Electron Isolated Context 原生右键菜单三级免 GC IPC 汉化钩子、macOS 实盘外部 IDE 探测与 0600 磁盘缓存、无 Shell execFile 安全浏览器/外部 IDE 桥接、Browser 级 CDP 事件发现与 83% 轮询降频、SingletonLock 零子进程空闲短路、2.33.0+~2.35.2+ M2 冷启动接力与原进程 --flag/代理保留、iframe 生命周期日志限频与 token 脱敏、五态预设与 EN/中文跨窗口/Swarm 广播及 0600 原子持久化、SQLite O(1) 增量双语圆环胶囊单飞合并同步与 dbFound 远端判别、55 模型与 Swarm @worker 异步分片 Token 统计归因及 .cache/ 持久化索引、Swarm 子帧载荷裁剪注入、2.5s 热重载感知）
-│   ├── runtime.js              # 浏览器端注入引擎（宿主指纹门禁与 0ms 防闪白、五段式外观主题 + 独立「跟随系统」日夜配对开关 + `[ EN | 中文 ]` 二元语言零重刷切换、#ag-font-faces / #ag-custom-fonts / #ag-ui-widgets 三段拆分与 <1ms 原版旁路、Electron 原生右键菜单 CustomEvent 同步翻译器、仿 Claude 紧凑右键浮窗卡片（含文件/图片/外链/代码块/输入框与外部 IDE 子菜单）、Swarm 子帧 1.5s 轮询零闪烁预翻译护盾与原版底色双向极性同步、EN 态观察器零开销休眠、2.35.2 模型尾注与分组/项目名免翻防护、指标胶囊 260ms 悬浮意图/Remote SSH dbFound 静默门禁/订阅自愈/输入框单帧补挂与 rAF 合批、设置「本地扩展 → Token 统计」@container 布局与 ResizeObserver 渐隐同步）
+│   ├── manifest.json           # 版本号（6.0.6）、平台声明（darwin）、资源地址与 core/* 四件套 SHA-256 校验清单
+│   ├── daemon.mjs              # macOS Node CDP 守护进程（运行时 core/manifest.json SHA-256 强校验、宿主独占指纹门禁、Electron Isolated Context 原生右键菜单 REV=3 三级免 GC IPC 汉化钩子（reqId 防串包 + 10m TTL 熔断）、macOS 实盘外部 IDE 探测与 0600 磁盘缓存、无 Shell execFile 安全浏览器/外部 IDE 桥接、Browser 级 CDP 事件发现与 83% 轮询降频、SingletonLock 零子进程空闲短路、2.33.0+~2.35.2+ M2 冷启动接力与原进程 --flag/代理保留、iframe 生命周期日志限频与 token 脱敏、五态预设与 EN/中文跨窗口/Swarm 广播及 0600 原子持久化、SQLite O(1) 增量双语圆环胶囊单飞合并同步与 dbFound 远端判别、55 模型与 Swarm @worker 异步分片 Token 统计归因（防自等待死锁/前台抢占）及 .cache/ 持久化索引、Swarm 子帧载荷裁剪注入、2.5s 热重载感知与旧版 excludeI18n 自动迁移）
+│   ├── runtime.js              # 浏览器端注入引擎（宿主指纹门禁与 0ms 防闪白、五段式外观主题 + 独立「跟随系统」日夜配对开关 + `[ EN | 中文 ]` 二元语言零重刷切换、#ag-font-faces / #ag-custom-fonts / #ag-ui-widgets 三段拆分与 <1ms 原版旁路、Diff 虚拟代码行 .code-line/.view-lines 隔离与升级免重启去重热恢复、Electron 原生右键菜单 REV=3 CustomEvent 同步翻译器、仿 Claude 紧凑右键浮窗卡片（含文件/图片/外链/代码块/输入框、外部 IDE 子菜单与 i18n.override.json 覆盖）、Swarm 子帧 1.5s 轮询零闪烁预翻译护盾（含 <select> 选中值保护）与原版底色双向极性同步、EN 态观察器零开销休眠、2.35.2 模型 Leaving Soon 尾注与用户内容免翻防护、指标胶囊 260ms 悬浮意图/Remote SSH dbFound 静默门禁/订阅自愈/输入框单帧补挂与 rAF 合批、设置「本地扩展 → Token 统计」全双语 @container 布局与 ResizeObserver 渐隐同步）
 │   ├── theme.css               # 五段式样式表（莫兰迪古典矿物默认视觉、烟岚石青/火漆单层 2px 合并输入框、跟随系统开关样式、仿 Claude 紧凑右键浮窗卡片 5 浅 + 3 深主题样式、零 :has() 侧栏实色底优化、`Absolutely！` 与双深色预设、圆环指标胶囊与 Token 统计 `@container` + `subgrid` 面板）
-│   └── i18n.json               # 2,226 条零冲突标准 JSON 基准词典（挂载至 Object.create(null)）
+│   └── i18n.json               # 2,228 条零冲突标准 JSON 基准词典（挂载至 Object.create(null)）
 └── user/                       # 【用户改装层】升级 100% 保留，守护进程每 2.5s 检测 mtimeMs 热重载注入
     ├── config.json             # 开关配置（enabled / channel / preset / darkPreset / installedLocale / metricsMode / contextLimit / contextLimitOverride / modules / themeVars / darkThemeVars）
     ├── custom.css              # 自定义追加 CSS（独立挂载于 #antigravity-user-custom-style）
@@ -151,7 +151,7 @@ node install.mjs install --sync-user
 ```bash
 node install.mjs verify
 ```
-当顶层输出 `"ok": true`、`"themeStyle": true`、`fonts.allRequiredInstalled: true`，且 `live.state` 下 `"bodyReady": true`、`"hasStyle": true`、`"dictCount": 2226`（在源码仓库目录运行 `doctor` 时还会返回 `coreIntegrity.sourceSync.inSync: true` 校验仓库与已安装内核一致）时，代表主题、字体、汉化、右键菜单、指标胶囊与「Token 统计」面板已全部实机生效。
+当顶层输出 `"ok": true`、`"themeStyle": true`、`fonts.allRequiredInstalled: true`，且 `live.state` 下 `"bodyReady": true`、`"hasStyle": true`、`"dictCount": 2228`（在源码仓库目录运行 `doctor` 时还会返回 `coreIntegrity.sourceSync.inSync: true` 校验仓库与已安装内核一致）时，代表主题、字体、汉化、右键菜单、指标胶囊与「Token 统计」面板已全部实机生效。
 
 ---
 

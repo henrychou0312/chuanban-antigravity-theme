@@ -4,6 +4,34 @@
 
 ---
 
+## [v6.0.6-macos-hardened] - 2026-11-27
+
+> **适用平台**：仅限 **macOS（`darwin`）**（Antigravity `2.35.2+` / `2.35.1` / `2.35.0` / `2.34.0+`，向下完全兼容 `2.33.x` / `2.32.x` / `2.31.x` / `2.30.0`）  
+> **变更定位**：同步上游 [`Anarcadia/chuanban-antigravity-theme-patch`](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) **`v6.0.5` ~ `v6.0.6`**（`73dc3e9` ~ `b318277`）全部 macOS 适用与跨平台更新（完整保留 macOS-only 精简架构与运行时安全加固；直接忽略 Windows + WSL2 专属 UNC 退避/暂存 LRU 与后台渐进预热代码）
+
+### Added, Fixed & Optimized（Diff 视图代码行防误翻 + 原版配色状态机闭环 + `Leaving Soon` 模型下线提示汉化 + Token 统计面板全界面双语化 + 原生右键菜单钩子 `REV=3`）
+- **修复 `Review / Working Directory / Agent Edits` Diff 视图中代码标识符被汉化词典误替换的问题（`core/runtime.js` / `core/daemon.mjs`，同步上游 #50、#51）**：
+  - 将 Antigravity 自定义虚拟化代码行容器（`.code-line .line-content`、`.code-line .token`）及 `.view-lines` 同步纳入 `DEFAULT_EXCLUDE_I18N`、`CONTAINER_IMMUTABLE_EXCLUDE_SELECTOR`、三处 `[data-markdown-root]` 内嵌属性守卫与 `daemon.mjs` 旧版 `selectors.excludeI18n` 自动迁移兜底，彻底阻断语法高亮拆分 `<span class="token">` 后英文标识符（如 `Allow`、`Copy`、`Default` 等）被误翻为中文，同时保留外层 `Review` 栏与文件头控件的正常汉化；
+  - 升级重注入时对当前已打开 Diff 视图中的代码节点执行 `!isUiEnglish()` 门控与父级 `closest(...)` 祖先去重的 `restoreAllTranslations` 原位免重启热恢复；并将 `.code-line` / `.view-lines`（含 `.monaco-diff-editor`）补入 `APPEARANCE_SKIP_SELECTOR`、`METRICS_DOM_SKIP_SEL` 与 `MODAL_FAST_SKIP_SEL` 三处全局 `MutationObserver` 的 O(1) 快速短路列表，消除大文件 Diff 滚动时的无关扫描。
+- **修复深色模式下直接点击「A 原版配色」残留原生深色及关闭「跟随系统」状态机缺口（`core/runtime.js`，同步上游 #48）**：
+  - 未开启「跟随系统」时点击第 1 格 `A 原版配色` 自动通过内部标志补触发原生 `light` 按钮切回干净的原版浅色；开启「跟随系统」时严格维持系统日夜跟随不误退；同时补齐在深色原版态关闭「跟随系统」开关时的浅/深色预设回落闭环。
+- **补齐 `2.35.2` 模型选择器 `Leaving Soon` 徽标、下线日期动态提示与 5 项用户内容免翻排除（`core/i18n.json` / `core/runtime.js`，`2,228` 条词典，同步上游 #47）**：
+  - 新增 `Leaving Soon`（`即将下线`）与 `Use Hydrogen for better quality with lower quota usage.` 词条，并将 `Your Plan:` 精校为 `当前套餐：`；扩展 `formatEnglishDateZh()` 兼容无年份月日（如 `Nov 30` → `11 月 30 日`），支持任意模型说明拼接 `. Leaving on <Date>.` 自动拆解翻译；
+  - 补齐 `<1% left` 与 `less than a minute` / 短时间单位（`d`/`h`/`m`/`s`）配额文案解析、`SKIP_ARIA_LABEL_VALUES` 扩展配置支持，以及 `2.35.2` 新增的 5 项动态用户内容 `data-testid` 免翻排除（`coordinator-card-title`、`coordinator-card-latest-line`、`context-provider-hover-card-title`、`ask-question-header-text`、`ask-question-option-text`）。
+- **Token 统计面板全界面 `[ EN | 中文 ]` 双语化、`Claude & GPT` 池标注与查询并发抢占修复（`core/runtime.js` / `core/daemon.mjs`）**：
+  - 补齐「Token 消耗分析」整套面板（骨架、KPI、贡献热力图/月日/浮层、14 日趋势、模型/场景/会话/项目列表与空态、筛选胶囊与报错提示）的原生英文文案，切换 `[ EN | 中文 ]` 时通过 `__ag_rerender_token_analytics_lang` 立即原地刷新已打开面板；
+  - 配额池升级标注为 `Claude & GPT` / `Claude/GPT`，并在 `parseGenMetadataRow()` 将 `gpt-`（含 `apiProvider === 31 / 32`）纳入未单独上报思考 Token 识别；
+  - 同步 `runTokenAnalyticsQuery()` 跨平台自等待死锁修复（快照 `prevFgPromise` + `tokenAnalyticsFgAbortSeq` 前台强制刷新抢占中止，并在中止分支跳过缓存裁剪避免误清已缓存条目）、按 `conversation_summaries.db` 最新修改时间倒序扫描、统一 `dbCount` 分母口径与 `refreshLineageIndex()` 已建档无元数据节点免 `statSync` 跳过。
+- **原生右键菜单 IPC 钩子升级至 `REV=3`、Swarm `<select>` 选中值保护与跨仓切回自愈（`core/daemon.mjs` / `core/runtime.js` / `install.mjs`）**：
+  - 原生右键菜单钩子升级至 `REV=3`：请求引入唯一递增 `reqId` nonce 校验防止并发串包，端点熔断由会话永久封禁升级为 `2` 次 0 命中触发 `10` 分钟 TTL 自动恢复，补充 `Standalone`（`独立对话`）及 `group-outside*` / `project-outside*` 固定子菜单项，并通过 `window.__ag_lookup_user_override` 打通 `user/i18n.override.json` 到自绘右键浮窗的最高优先级覆盖；
+  - 修复 Swarm 子帧护盾在翻译原生 `<select>` `<option>` 时重置选中值的问题；`install.mjs` 安装期无条件自愈 `installedLocale = 'zh-CN'` 并清理遗留 `fontMode` 键（兼容从上游 Global 纯英文轻仓切回），macOS 可选启动器 plist 版本同步升级至 `6.0.6`（`CFBundleVersion: 606`）。
+
+### Security & Ignored（安全加固保持与 Windows + WSL2 UNC 专属项忽略）
+- **保留全部运行时安全加固**：继续保持 `core/manifest.json` 启动与热重载 Fail-Closed SHA-256 强校验、零 `user/custom.js` / `new Function` / `window.__AG_PATCH_CTX__` 暴露、零外部 Python 执行、`0700`/`0600` 属主独占权限收敛、无 Shell `execFile` 安全外部桥接与 `--no-service` 无常驻模式。
+- **忽略 Windows + WSL2 UNC 专属代码**：依据本仓库 macOS-only 定位，已直接忽略上游 #49 / `v6.0.5` 中的全部 Windows + WSL2 9P UNC 专属逻辑（`isUncPath`、`wslUncBackoffUntil`、`markUncSlowIfExceeded`、`wslSqliteStagingCache` 6 槽位 LRU、`bypassStagingLru`、`removeWslStagingEntry`、`cleanupWslSqliteStagingCache`、`ensureWin32WslProbesWarmAsync`、`wslConfiguredButOffline`、UNC 触发的后台渐进微批 `_bgWarmup` 及 Windows 指标胶囊 WSL 诊断命令复制按钮分支）。
+
+---
+
 ## [v6.0.4-macos-hardened] - 2026-11-25
 
 > **适用平台**：仅限 **macOS（`darwin`）**（Antigravity `2.35.2+` / `2.35.1` / `2.35.0` / `2.34.0+`，向下完全兼容 `2.33.x` / `2.32.x` / `2.31.x` / `2.30.0`）  

@@ -1,6 +1,6 @@
-# 船板的 Antigravity 主题、字体与汉化补丁 (v6.0.4)
+# 船板的 Antigravity 主题、字体与汉化补丁 (v6.0.6)
 
-[![Version](https://img.shields.io/badge/version-6.0.4-3D6470.svg)](https://github.com/henrychou0312/chuanban-antigravity-theme)
+[![Version](https://img.shields.io/badge/version-6.0.6-3D6470.svg)](https://github.com/henrychou0312/chuanban-antigravity-theme)
 [![Antigravity](https://img.shields.io/badge/Antigravity-2.35.2%2B-3F6E7A.svg)](https://github.com/henrychou0312/chuanban-antigravity-theme)
 [![Node](https://img.shields.io/badge/node-%3E%3D22.0.0%20(22.13%2B%20Full)-339933.svg)](https://nodejs.org/)
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://github.com/henrychou0312/chuanban-antigravity-theme)
@@ -10,21 +10,21 @@
 >
 > **上游语言平行版参考**：本仓库为 **macOS 专属简体中文安全加固版**；若你仅需纯英文无汉化轻量版，可参考上游作者物理分仓的 **[Global English Lightweight Edition (`Anarcadia/chuanban-antigravity-theme`)](https://github.com/Anarcadia/chuanban-antigravity-theme)**。
 
-面向 **macOS** 版 Google Antigravity（支持最新 **`2.35.2+` / `2.35.1` / `2.35.0` / `2.34.0+`**）的轻量级非侵入式外观、排版、汉化与本地只读统计增强补丁（macOS 专属精简与安全加固版）。内置默认**莫兰迪古典矿物风格（`morandi`）**、五段式外观切换 **`[ A | ✳️ | MO | 📖 | 🌙 ]`**、独立**「跟随系统」日夜配对开关**、**`[ EN | 中文 ]`** 一键零重刷语言双切、四层中西文混排与活字润墨、**2,226 条**零冲突汉化（含 Swarm 1.5s 轮询零闪烁护盾与 Electron 原生右键菜单跨隔离世界零 GC 汉化）、**仿 Claude 紧凑右键浮窗卡片**与无 Shell 安全浏览器/外部 IDE 桥接、`260ms` 悬浮意图上下文圆环胶囊（Remote SSH 无本地库自动隐身）、`@container` 响应式「Token 统计」面板及 **Cloudflare R2 → GitHub Release → Google Drive** 多源自动字体下载器（含 SHA-256 校验）；不修改客户端 `.asar` 与系统签名，零第三方 npm 依赖，由 AI Agent 一键部署并通过 `user/` 层实现 `2.5s` 热重载定制。
+面向 **macOS** 版 Google Antigravity（支持最新 **`2.35.2+` / `2.35.1` / `2.35.0` / `2.34.0+`**）的轻量级非侵入式外观、排版、汉化与本地只读统计增强补丁（macOS 专属精简与安全加固版）。内置默认**莫兰迪古典矿物风格（`morandi`）**、五段式外观切换 **`[ A | ✳️ | MO | 📖 | 🌙 ]`**、独立**「跟随系统」日夜配对开关**、**`[ EN | 中文 ]`** 一键零重刷语言双切、四层中西文混排与活字润墨、**2,228 条**零冲突汉化（严格隔离 Diff/代码行与用户内容、含 Swarm 1.5s 轮询零闪烁护盾与 Electron 原生右键菜单 `REV=3` 跨隔离世界零 GC 汉化）、**仿 Claude 紧凑右键浮窗卡片**与无 Shell 安全浏览器/外部 IDE 桥接、`260ms` 悬浮意图上下文圆环胶囊（Remote SSH 无本地库自动隐身）、全双语 `@container` 响应式「Token 统计」面板及 **Cloudflare R2 → GitHub Release → Google Drive** 多源自动字体下载器（含 SHA-256 校验）；不修改客户端 `.asar` 与系统签名，零第三方 npm 依赖，由 AI Agent 一键部署并通过 `user/` 层实现 `2.5s` 热重载定制。
 
 > 供 AI Agent 读取的完整部署与改装技术契约见仓库根目录 **[`SKILL.md`](https://github.com/henrychou0312/chuanban-antigravity-theme/blob/main/SKILL.md)**，完整版本演进见 **[`CHANGELOG.md`](CHANGELOG.md)**。
 
 ---
 
-## ✨ 核心特性（v6.0.4 · macOS 专属安全加固版）
+## ✨ 核心特性（v6.0.6 · macOS 专属安全加固版）
 
-- **多套打磨风格与独立「跟随系统」日夜配对开关**：内置温润耐看的**莫兰迪古典矿物风格**（默认）、深度打磨的**仿 Claude 书卷暖白风格（`Absolutely！`）**、护眼的**温润书卷夜间风格（`claude-warm`）**与深海冷碳深色模式（`onyx`），并支持在设置面板一键切回**官方原版风格（`A`）**（`<1ms` 硬件级旁路补丁配色与自定义字体）；提供独立**「跟随系统 / Follow System」**开关（复用客户端原生系统跟随状态、零配置膨胀），自动按 macOS 昼夜切换你的浅色/深色自定义预设配对（点击相反极性预设可即时预览并自动退出跟随）。
-- **母语级全区域汉化（含原生右键菜单 + Swarm 零闪烁护盾）**：**2,226 条**零冲突词典全面适配 Antigravity `2.35.2`（含运行期模型选择器解锁与尾注解析），覆盖主界面、15+ 设置子页、步骤计划芯片、插件权限弹窗、编排器模型档位与子 Agent / Swarm 蜂群工作台；针对左侧会话栏与 Monaco 编辑器走 Electron 原生菜单（`showContextMenu`）的场景，通过 `Electron Isolated Context` 三级免 GC 钩子 + 零 DOM 变更双同步 `CustomEvent` 实现 100% 汉化闭环（自动豁免用户分组/项目名并尊重 `i18n.override.json` 最高优先级）；外观面板提供独立 **`[ EN | 中文 ]`** 按钮一键零重刷切换（`EN` 态自动休眠观察器并干净卸载原生菜单钩子）。
-- **仿 Claude 紧凑右键浮窗卡片与 macOS 安全浏览器/外部 IDE 桥接**：接管对话正文、代码块、网页外链、对话内图片（复制图片/另存图片）、本地文件胶囊与右侧文件栏、底部输入框右键菜单，完整适配 5 浅 + 3 深配色预设与中英双语实时切换（`Shift + 右键` 随时透传官方原生菜单；支持 `"modules": { "contextMenu": false }` 完整剥离载荷）。守护进程自动探测 macOS 本机 `/Applications` 与 `~/Applications` 已安装的外部编辑器（`VS Code`、`Cursor`、`Windsurf`、`Zed`、`JetBrains` 全系、`Sublime Text`），并通过无 Shell `execFile` 安全桥接支持在浏览器预览本地 `.html/.pdf/.svg` 或直接跳转外部 IDE 对应行号。
+- **多套打磨风格与独立「跟随系统」日夜配对开关**：内置温润耐看的**莫兰迪古典矿物风格**（默认）、深度打磨的**仿 Claude 书卷暖白风格（`Absolutely！`）**、护眼的**温润书卷夜间风格（`claude-warm`）**与深海冷碳深色模式（`onyx`），并支持在设置面板一键切回**官方原版风格（`A`）**（`<1ms` 硬件级旁路补丁配色与自定义字体，深色态切回自动还原原版浅色）；提供独立**「跟随系统 / Follow System」**开关（复用客户端原生系统跟随状态、零配置膨胀），自动按 macOS 昼夜切换你的浅色/深色自定义预设配对（点击相反极性预设可即时预览并自动退出跟随）。
+- **母语级全区域汉化（Diff 代码精准隔离 + 原生右键 `REV=3` + Swarm 零闪烁护盾）**：**2,228 条**零冲突词典全面适配 Antigravity `2.35.2`（含运行期模型选择器 `Leaving Soon` 徽标与 `Leaving on <Date>` 下线提示解析），严格隔离 `Review / Diff` 虚拟化代码行（`.code-line` / `.view-lines`）、终端、文件名与用户动态内容避免误翻（升级支持免重启热恢复）；针对左侧会话栏与 Monaco 编辑器走 Electron 原生菜单（`showContextMenu`）的场景，通过 `Electron Isolated Context` `REV=3` 三级免 GC 钩子（`reqId` 防串包 + 10 分钟 TTL 自动恢复熔断）+ 零 DOM 变更双同步 `CustomEvent` 实现 100% 汉化闭环（自动豁免用户分组/项目名并打通 `i18n.override.json` 最高优先级覆盖）；外观面板提供独立 **`[ EN | 中文 ]`** 按钮一键零重刷切换（`EN` 态自动休眠观察器并干净卸载原生菜单钩子）。
+- **仿 Claude 紧凑右键浮窗卡片与 macOS 安全浏览器/外部 IDE 桥接**：接管对话正文、代码块、网页外链、对话内图片（复制图片/另存图片）、本地文件胶囊与右侧文件栏、底部输入框右键菜单，完整适配 5 浅 + 3 深配色预设与中英双语实时切换（同步支持 `user/i18n.override.json` 自定义词条覆盖，`Shift + 右键` 随时透传官方原生菜单；支持 `"modules": { "contextMenu": false }` 完整剥离载荷）。守护进程自动探测 macOS 本机 `/Applications` 与 `~/Applications` 已安装的外部编辑器（`VS Code`、`Cursor`、`Windsurf`、`Zed`、`JetBrains` 全系、`Sublime Text`），并通过无 Shell `execFile` 安全桥接支持在浏览器预览本地 `.html/.pdf/.svg` 或直接跳转外部 IDE 对应行号。
 - **字体美化与多源防配额自动安装**：UI 西文直连官方 `Google Sans Flex` 可变字体引擎（`#ag-font-faces` 常驻隔离防切肤缺字）× `AgSarasaUI` 更纱黑体精密字重桥接；对话正文与 Markdown 采用 `Anthropic Serif` + `Sarasa Mono Slab SC` 衬线；代码与文件胶囊采用 `Anthropic Mono` 等宽；主输入框采用打字机板状粗衬线配单层 `2px` 同心合并边框。内置 `install-fonts --auto-download` 多源回退下载器（优先 **Cloudflare R2**，更纱黑体支持 **Cloudflare R2 → 上游 GitHub Release (`fonts-sarasa-v1.0.43`) → Google Drive** 自动熔断切源 + 二进制魔数与 **SHA-256 强校验** + `.zip` 自动解压），同时为中国大陆用户提供**飞书免代理免登录高速下载页**兜底。
 - **防误触上下文圆环信息胶囊与 Remote SSH 适配**：在输入框底栏内嵌低干扰状态胶囊（支持主窗口、多路平铺分屏、`/btw` 支线提问与子 Agent 侧栏独立计量），引入 `260ms` 悬停意图检测与 `120ms` 卡片宽限期消除光标滑过误弹；区分本地库与 Remote SSH 远端会话（`dbFound: false` 时自动隐藏，不再常驻 `采样中…`）；如需旧版完整行内指标，可在 `user/config.json` 中配置 `"metricsMode": "full"`。
-- **后台深度「Token 统计」多维分析面板**：基于 Node.js `>= 22.13` 原生 `node:sqlite` 只读增量引擎，在「系统设置 → 本地扩展 → Token 统计」提供 4 口径 KPI、26 周贡献热力图、近 14 日堆叠趋势、55 模型映射与 `Claude` 共享配额池、工作场景及 Swarm `@worker` 真实协作者归因；采用纯 CSS `@container` `4:3` 响应式等高布局、`subgrid` 对齐、常驻筛选槽位与 `ResizeObserver` 渐隐溢出同步；内置 `.cache/token-analytics-index.json` 私有磁盘持久化索引（`TA_CACHE_SCHEMA_REV = 5`，按住 `Shift` 点击「刷新」强制全量重算）。
-- **流畅不卡顿的渲染与守护优化**：全面清除 `body:has()` 与全局 `:nth-child():has()` 并为侧栏虚拟滚动容器补齐实色底；Browser 级 CDP 事件发现（`Target.setDiscoverTargets`）实现毫秒级注入并削减 83% 轮询；空闲时基于 `SingletonLock` 软链 PID 预检实现 0 次 `ps` 派生；`relaunch` 与 `M2` 冷启动接力自动保留原进程 `--flag` 与代理参数/环境变量（凭据日志脱敏）；`doctor` 内置 `sourceSync` 源码/安装目录 SHA-256 同步诊断；自动将 Homebrew / `fnm` Node 还原为稳定软链写入 LaunchAgent。
+- **后台深度「Token 统计」全双语多维分析面板**：基于 Node.js `>= 22.13` 原生 `node:sqlite` 只读增量引擎，在「系统设置 → 本地扩展 → Token 统计」提供全界面 **`[ EN | 中文 ]`** 实时双语切换、4 口径 KPI、26 周贡献热力图、近 14 日堆叠趋势、55 模型映射与 `Claude & GPT` 共享配额池、工作场景及 Swarm `@worker` 真实协作者归因；采用纯 CSS `@container` `4:3` 响应式等高布局、`subgrid` 对齐、常驻筛选槽位与 `ResizeObserver` 渐隐溢出同步；内置 `.cache/token-analytics-index.json` 私有磁盘持久化索引（`TA_CACHE_SCHEMA_REV = 5`，按住 `Shift` 点击「刷新」强制全量重算）。
+- **流畅不卡顿的渲染与守护优化**：全面清除 `body:has()` 与全局 `:nth-child():has()` 并为侧栏虚拟滚动容器补齐实色底，三处全局 `MutationObserver` 针对 Diff `.code-line` / `.view-lines` 执行 O(1) 快速短路；Browser 级 CDP 事件发现（`Target.setDiscoverTargets`）实现毫秒级注入并削减 83% 轮询；空闲时基于 `SingletonLock` 软链 PID 预检实现 0 次 `ps` 派生；`relaunch` 与 `M2` 冷启动接力自动保留原进程 `--flag` 与代理参数/环境变量（凭据日志脱敏）；`doctor` 内置 `sourceSync` 源码/安装目录 SHA-256 同步诊断；自动将 Homebrew / `fnm` Node 还原为稳定软链写入 LaunchAgent。
 - **运行时完整性与最小权限安全加固**：守护进程在启动（含 `--keep-alive` 接管路径）及每次内核热重载前强制逐字节校验 `core/manifest.json` 的四件套 SHA-256 与文件大小（篡改即拒载）；移除 `user/custom.js` 动态 JS 执行（`new Function`）与外部 Python 脚本自动拉起；安装目录、配置、plist、`.cache/` 索引与外部编辑器缓存、字体缓存/解压暂存目录（忽略 zip 内符号链接 + 二进制魔数与 SHA-256 双校验）与私有日志统一收紧为属主独占权限（`0700` / `0600`），并支持 `node install.mjs install --no-service` 无常驻后台安装模式。
 
 ---
@@ -76,7 +76,7 @@
 >    - **若我在中国大陆境内导致终端下载遇阻、超时或速度过慢**，请勿反复卡死重试，直接推荐我在浏览器免代理打开 **[飞书国内免代理字体下载页 (`feishu.cn`)](https://www.feishu.cn/wiki/V2lbwB8ykiLLXrkzY41cXjQ1nXc)**（海外网络亦可用 [Cloudflare R2 直链](https://img.chuanban.cc/fonts/chuanban-suite/Windows-Sarasa-Split-SC-TTF-v1.0.43.zip)、[GitHub Release 镜像 (`fonts-sarasa-v1.0.43`)](https://github.com/Anarcadia/chuanban-antigravity-theme-patch/releases/tag/fonts-sarasa-v1.0.43) 或 Google Drive）将页面内全部字体与 `.zip` 下载到同一文件夹（无需手动解压），再交由 `install-fonts --from "<下载目录>"` 一键安装（缺少更纱亦可用 `brew install --cask font-sarasa-gothic`）。
 > 3. 运行 `node install.mjs install` 完成安装（默认启用 `"morandi"` 莫兰迪风格；macOS 单图标模式下 `doctor` 输出 `antigravity.launcherInstalled: false`、`install` 输出 `launcherStatus.mode: "single-icon-m2-relay"` 均属正常设计；若不希望注册 LaunchAgent 后台常驻服务，可改用 `node install.mjs install --no-service`）。  
 > 4. 检查输出中的 `cdpStatus`：若为 `"missing_opt_in_flag"`（Antigravity `2.33.0+` 尚未挂调试端口），**如果你当前正在 Antigravity 内部对话中运行，请勿执行 `--force` 强行重启自断会话**，只需把空闲时执行的命令 `node ~/.gemini/antigravity/theme-patch/install.mjs relaunch`（或提示我直接手动退出重开一次 Antigravity）发给我；如果你在外部独立终端运行且客户端空闲，请直接执行 `node install.mjs relaunch`。  
-> 5. 在端口就绪后运行 `node install.mjs verify`，确认 `"ok": true`、`"themeStyle": true`（`live.state.hasStyle: true`、`dictCount: 2226`）且 `fonts.allRequiredInstalled: true` 即完成验收。
+> 5. 在端口就绪后运行 `node install.mjs verify`，确认 `"ok": true`、`"themeStyle": true`（`live.state.hasStyle: true`、`dictCount: 2228`）且 `fonts.allRequiredInstalled: true` 即完成验收。
 
 #### 方式 B：手动终端安装（macOS）
 在 macOS 终端（Terminal / iTerm2）中按顺序执行：
@@ -108,21 +108,21 @@ node install.mjs install
 #    （自动保留原进程 --flag 与代理环境变量；或直接手动完全退出并重开一次 Antigravity）
 node ~/.gemini/antigravity/theme-patch/install.mjs relaunch
 
-# 6. 实机注入验收（确认 "ok": true、"themeStyle": true、dictCount: 2226 且 fonts.allRequiredInstalled: true）
+# 6. 实机注入验收（确认 "ok": true、"themeStyle": true、dictCount: 2228 且 fonts.allRequiredInstalled: true）
 node ~/.gemini/antigravity/theme-patch/install.mjs verify
 ```
 
 > 如需临时卸载并即时还原原版界面，运行 `node ~/.gemini/antigravity/theme-patch/install.mjs uninstall`（保留 `~/.gemini/antigravity/theme-patch/user/` 配置并清理 `.cache/`）；如需退回上一版本内核，运行 `node ~/.gemini/antigravity/theme-patch/install.mjs rollback`。
 
-### 二、老用户升级至 v6.0.4
+### 二、老用户升级至 v6.0.6
 `node install.mjs install` 会自动备份旧版 `core/` 内核、将旧版默认浅色预设 `"high-contrast"` 平滑迁移至 `"morandi"`、刷新 LaunchAgent 常驻服务（并自动将 Homebrew/`fnm` Node 还原为稳定软链路径），同时完整保留 `~/.gemini/antigravity/theme-patch/user/` 中的个人自定义配置：
 
 > **💬 复制发给 Agent（老用户无缝升级）**：  
-> 请帮我拉取最新的 `https://github.com/henrychou0312/chuanban-antigravity-theme.git`（或读取最新解压目录），阅读其中的 `SKILL.md` 后直接运行 `node install.mjs install` 升级至 `v6.0.4` macOS 安全精简版（若我此前使用的是更早期的单文件版 `antigravity-font-daemon.mjs` 且有自定义字号/配色，请先帮我把自定义项迁移到 `~/.gemini/antigravity/theme-patch/user/`）。若安装后 `cdpStatus` 为 `"missing_opt_in_flag"` 且你正在 Antigravity 内部会话中运行，请勿直接中断当前对话，告诉我空闲时运行 `node ~/.gemini/antigravity/theme-patch/install.mjs relaunch`（或手动重开一次客户端）即可；端口已就绪则直接运行 `node install.mjs verify` 确认 `"ok": true`、`"themeStyle": true`、`"dictCount": 2226` 且 `fonts.allRequiredInstalled: true` 完成验收。
+> 请帮我拉取最新的 `https://github.com/henrychou0312/chuanban-antigravity-theme.git`（或读取最新解压目录），阅读其中的 `SKILL.md` 后直接运行 `node install.mjs install` 升级至 `v6.0.6` macOS 安全精简版（若我此前使用的是更早期的单文件版 `antigravity-font-daemon.mjs` 且有自定义字号/配色，请先帮我把自定义项迁移到 `~/.gemini/antigravity/theme-patch/user/`）。若安装后 `cdpStatus` 为 `"missing_opt_in_flag"` 且你正在 Antigravity 内部会话中运行，请勿直接中断当前对话，告诉我空闲时运行 `node ~/.gemini/antigravity/theme-patch/install.mjs relaunch`（或手动重开一次客户端）即可；端口已就绪则直接运行 `node install.mjs verify` 确认 `"ok": true`、`"themeStyle": true`、`"dictCount": 2228` 且 `fonts.allRequiredInstalled: true` 完成验收。
 
 ### 三、日常定制与排障话术
 - **🎨 切换风格、跟随系统、语言或微调字号**：日常切换 5 套风格、开关「跟随系统」与切换中英文可直接在「系统设置 → 外观界面」点击对应控件并自动落盘；如需修改扩展预设（如 `"claude-desktop-purewhite"` / `"vintage-deep"`）、关闭主题右键菜单（`"modules": { "contextMenu": false }`）、切换旧版全量指标胶囊（`"metricsMode": "full"`）或调大 `"--ag-chat-font-size"`，可让 Agent 按 `SKILL.md` 修改 `~/.gemini/antigravity/theme-patch/user/config.json`。
-- **🇨🇳 自定义词条覆盖**：在 `~/.gemini/antigravity/theme-patch/user/i18n.override.json` 中写入 `"英文原词": "自定义中文"`，保存后 `2.5s` 内热生效（同时对主界面与原生右键菜单均拥有最高优先级）。
+- **🇨🇳 自定义词条覆盖**：在 `~/.gemini/antigravity/theme-patch/user/i18n.override.json` 中写入 `"英文原词": "自定义中文"`，保存后 `2.5s` 内热生效（同时对主界面与原生/自绘右键菜单均拥有最高优先级）。
 - **🔤 字体缺失或事后重新修复安装**：若首次安装跳过了字体或更换新电脑，可在浏览器免代理打开 **[飞书国内免代理字体下载页](https://www.feishu.cn/wiki/V2lbwB8ykiLLXrkzY41cXjQ1nXc)** 将全部字体文件下载到同一目录（无需解压），再让 Agent 运行 `node ~/.gemini/antigravity/theme-patch/install.mjs install-fonts --from "<下载目录>"` 一键补装。
 - **🔍 故障定界、源码同步检查、回滚与卸载**：可让 Agent 依次运行 `node install.mjs doctor`（源码目录运行会自动校验 `coreIntegrity.sourceSync`）与 `node install.mjs verify --safe-mode` 排查配置冲突；退回上一版本运行 `node install.mjs rollback`，彻底卸载还原运行 `node install.mjs uninstall`。
   - *注：若客户端冷启动后偶发未显示 `Remote`（远程）入口，属官方 `language_server` 冷启动兜底包竞态（补丁已内置空输入态自动自愈；若启动瞬间正在输入触发了草稿保护，按 `Cmd + Shift + R` 刷新一次即可恢复）。*
@@ -153,13 +153,15 @@ node ~/.gemini/antigravity/theme-patch/install.mjs verify
 | **1. 飞书国内免代理镜像（中国大陆推荐）** | [**飞书主题图文落地页**](https://www.feishu.cn/wiki/EQyqwJEqmi1LH3k11tzcmkMHnYd) · [**配套字体国内高速下载页**](https://www.feishu.cn/wiki/V2lbwB8ykiLLXrkzY41cXjQ1nXc) | 面向中国大陆用户的免登录、免代理直连通道：落地页提供完整图文预览与部署指引；字体下载页内嵌 `Anthropic Serif/Mono` 与更纱黑体拆分包共 5 张直下卡片，浏览器满速下载至同一目录后交由 `install-fonts --from` 即可自动解压安装至 `~/Library/Fonts`。 |
 | **2. 脚本自动多源镜像（防配额超限）** | [**Cloudflare R2 更纱拆分包**](https://img.chuanban.cc/fonts/chuanban-suite/Windows-Sarasa-Split-SC-TTF-v1.0.43.zip) · [**上游 GitHub Release 镜像**](https://github.com/Anarcadia/chuanban-antigravity-theme-patch/releases/tag/fonts-sarasa-v1.0.43) | `install.mjs --auto-download` 默认走 **Cloudflare R2 → 上游 GitHub Release → Google Drive** 多源自动回退并做二进制魔数与 **SHA-256** 双校验，规避 Google Drive 公开大文件 24 小时下载配额超限（macOS 更纱黑体亦可直接 `brew install --cask font-sarasa-gothic`）。 |
 | **3. Google Drive 资源包（海外备用源）** | [**Google Drive 共享文件夹**](https://drive.google.com/drive/folders/1NX92SgVUqtSjWg6bt6sIJXy-cn7J_boC) | 含必备字体备用文件：`AnthropicSerif-Regular/Bold.ttf`、`AnthropicMono-Regular.ttf`、[`Windows-Sarasa-Split-SC-TTF-v1.0.43.zip`](https://drive.google.com/file/d/1iVVvZXtwUcDiHy42tJ25X6N-JlOf3l7A/view?usp=sharing) 及可选 `Sarasa-SuperTTC.ttc`。 |
-| **4. GitHub 代码仓库** | [**本仓 macOS 安全加固版**](https://github.com/henrychou0312/chuanban-antigravity-theme) · [**上游中文主仓**](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) · [**上游 Global 英文轻仓**](https://github.com/Anarcadia/chuanban-antigravity-theme) | 本仓库包含 macOS 专属精简与安全加固版内核 `core/`、个人改装层 `user/`、生命周期 CLI `install.mjs`、[`SKILL.md`](https://github.com/henrychou0312/chuanban-antigravity-theme/blob/main/SKILL.md) 与 [`CHANGELOG.md`](CHANGELOG.md)（同步上游至 `v6.0.4`）。 |
+| **4. GitHub 代码仓库** | [**本仓 macOS 安全加固版**](https://github.com/henrychou0312/chuanban-antigravity-theme) · [**上游中文主仓**](https://github.com/Anarcadia/chuanban-antigravity-theme-patch) · [**上游 Global 英文轻仓**](https://github.com/Anarcadia/chuanban-antigravity-theme) | 本仓库包含 macOS 专属精简与安全加固版内核 `core/`、个人改装层 `user/`、生命周期 CLI `install.mjs`、[`SKILL.md`](https://github.com/henrychou0312/chuanban-antigravity-theme/blob/main/SKILL.md) 与 [`CHANGELOG.md`](CHANGELOG.md)（同步上游至 `v6.0.6`）。 |
 | **5. Notion 引导页（上游参考）** | [**chuanban-antigravity-theme-patch**](https://chuanban.notion.site/chuanban-antigravity-theme-patch-db7c5846f37546be9481cd791aed0554) | 上游原作者图文说明与安装引导海外镜像页（实际部署请以本仓库 `README.md` 与 `SKILL.md` 为准）。 |
 
 ---
 
 ## 🕒 近期版本演进（完整记录见 [`CHANGELOG.md`](CHANGELOG.md)）
 
+- **v6.0.6（2026-11-27 · macOS 安全精简版同步上游 `v6.0.5 ~ v6.0.6`）**
+  - 同步上游 `v6.0.5` 与 `v6.0.6` 全部 macOS 适用更新（直接忽略 Windows + WSL2 UNC 退避/暂存 LRU 专属代码，保留零 `custom.js` 与 Fail-Closed SHA-256 安全加固）：修复 `Review / Working Directory / Agent Edits` Diff 视图虚拟化代码行（`.code-line .line-content` / `.code-line .token` / `.view-lines`）被误翻为中文的问题（同步上游 #50、#51，含旧配置自动迁移、升级原位去重热恢复与三处全局 `MutationObserver` 快速短路）；修复深色模式下点击「A 原版配色」残留原生深色及关闭「跟随系统」状态机缺口（同步上游 #48）；补齐 `2.35.2` 模型选择器 `Leaving Soon` 徽标与 `Leaving on <Date>` 动态提示（零冲突词典扩充至 **`2,228` 条**，同步上游 #47）及 5 项动态用户内容免翻排除；完成「Token 统计」整套面板 `[ EN | 中文 ]` 双语化、`Claude & GPT` 配额池标注与并发刷新自等待死锁/前台抢占修复；原生右键菜单钩子升级至 `REV=3`（`reqId` 防串包 + 10 分钟 TTL 自动恢复熔断 + 打通 `i18n.override.json` 至自绘右键浮窗），并修复 Swarm `<select>` 选中值重置与跨仓切回 `installedLocale` 自愈。
 - **v6.0.4（2026-11-25 · macOS 安全精简版同步上游 `v6.0.4`）**
   - 同步上游 `v6.0.4` 全部 macOS 适用更新（忽略全部 Windows/Linux 专属代码，保留零 `custom.js` 与 Fail-Closed SHA-256 安全加固）：适配 Antigravity `2.35.2` 运行期模型选择器解锁与尾注解析，零冲突基准词典扩充至 **`2,226` 条**；新增 Electron 原生右键菜单（`showContextMenu`）跨隔离世界三级零 GC 汉化（同步上游 #44，尊重 `i18n.override.json` 并豁免用户分组/项目名）；新增仿 Claude 紧凑右键浮窗卡片、全场景汉化与 macOS 无 Shell `execFile` 安全浏览器/外部 IDE 桥接（同步上游 #46，支持 `Shift + 右键` 透传原生菜单与 `modules.contextMenu: false` 载荷裁剪，外部 IDE 探测缓存以 `0600` 原子落盘至 `.cache/external-editors.json`）；字体自动下载升级为 **Cloudflare R2 → 上游 GitHub Release (`fonts-sarasa-v1.0.43`) → Google Drive** 多源熔断回退 + **SHA-256** 强校验（新增 `--mirror` / `--mirror-order` 参数），并补充中国大陆免代理**飞书字体下载页**与落地页兜底 SOP。
 - **v6.0.3（2026-11-24 · macOS 安全精简版同步上游 `v6.0.2 ~ v6.0.3`）**

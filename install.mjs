@@ -211,7 +211,7 @@ function buildManifest(baseDir = __dirname) {
   }
   const manifest = {
     name: 'chuanban-antigravity-theme-patch',
-    version: '6.0.4',
+    version: '6.0.6',
     platform: 'darwin',
     minNodeVersion: '22.0.0',
     fullMetricsNodeVersion: '22.13.0',
@@ -944,9 +944,9 @@ function ensureCdpLaunchers(channel = 'auto', options = {}) {
         '  <key>CFBundlePackageType</key>',
         '  <string>APPL</string>',
         '  <key>CFBundleShortVersionString</key>',
-        '  <string>6.0.4</string>',
+        '  <string>6.0.6</string>',
         '  <key>CFBundleVersion</key>',
-        '  <string>604</string>',
+        '  <string>606</string>',
         ...(iconBase ? ['  <key>CFBundleIconFile</key>', `  <string>${iconBase}</string>`] : []),
         '  <key>LSMinimumSystemVersion</key>',
         '  <string>12.0</string>',
@@ -1641,8 +1641,9 @@ async function runInstall() {
   } else if (!currentCfg.darkPreset) {
     currentCfg.darkPreset = 'onyx';
   }
-  if (!currentCfg.installedLocale) {
-    currentCfg.installedLocale = 'zh-CN';
+  currentCfg.installedLocale = 'zh-CN';
+  if ('fontMode' in currentCfg) {
+    delete currentCfg.fontMode;
   }
   if (!currentCfg.modules || typeof currentCfg.modules !== 'object' || Array.isArray(currentCfg.modules)) {
     currentCfg.modules = {};
